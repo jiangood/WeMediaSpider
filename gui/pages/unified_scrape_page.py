@@ -48,7 +48,7 @@ from qfluentwidgets import TableWidget as FluentTable
 from ..styles import COLORS
 from ..widgets import CardWidget as CustomCard, ProgressWidget, AccountListWidget, CustomSpinBox
 from ..workers import AsyncBatchScrapeWorker
-from ..utils import DEFAULT_OUTPUT_DIR, play_sound
+from ..utils import DEFAULT_OUTPUT_DIR, DB_PATH, play_sound
 from spider.wechat.scraper import AsyncBatchWeChatScraper
 
 # ============================================================
@@ -144,8 +144,7 @@ class UnifiedScrapePage(QWidget):
         self.batch_scraper = None
         self.scrape_worker = None
         
-        # 当前爬取任务的输出文件路径
-        self._current_output_file = None
+
         
         # 设置对象名称，用于样式表选择器
         self.setObjectName("unifiedScrapePage")
@@ -476,20 +475,9 @@ class UnifiedScrapePage(QWidget):
             InfoBar.warning(title="登录失效", content="请重新登录", parent=self, position=InfoBarPosition.TOP, duration=3000)
             return
         
+        # 使用嵌入式数据库存储爬取结果
         output_dir = self.output_input.text().strip() or DEFAULT_OUTPUT_DIR
         os.makedirs(output_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # 根据公众号数量生成文件名
-        if len(accounts) == 1:
-            # 单个公众号：公众号名_时间戳.csv
-            # 清理文件名中的非法字符
-            safe_name = "".join(c for c in accounts[0] if c not in r'\/:*?"<>|')
-            output_file = os.path.join(output_dir, f"{safe_name}_{timestamp}.csv")
-        else:
-            # 多个公众号：批量爬取_N个公众号_时间戳.csv
-            output_file = os.path.join(output_dir, f"批量爬取_{len(accounts)}个公众号_{timestamp}.csv")
-        self._current_output_file = output_file  # 记录当前输出文件路径
         
         # 获取正文关键词过滤
         keyword_filter = self.keyword_filter_input.text().strip() if self.content_check.isChecked() else ""
@@ -504,7 +492,7 @@ class UnifiedScrapePage(QWidget):
             'request_interval': self.interval_spin.value(),
             'include_content': self.content_check.isChecked(),
             'content_keyword_filter': keyword_filter,  # 正文关键词过滤
-            'output_file': output_file,
+            'db_path': DB_PATH,
             'max_concurrent_accounts': min(3, len(accounts)),  # 最多3个公众号并发
             'max_concurrent_requests': self.concurrent_spin.value()
         }
@@ -602,33 +590,28 @@ class UnifiedScrapePage(QWidget):
                 detail_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 break
     
-    def _on_scrape_success(self, articles, output_file):
+    def _on_scrape_success(self, articles, db_path):
         self.start_btn.show()
         self.cancel_btn.hide()
         self._article_count = len(articles)
-        self.progress_widget._article_count = len(articles)  # 确保完成时显示正确数量
+        self.progress_widget._article_count = len(articles)
         self.progress_widget.set_complete(f"爬取完成！")
         self.status_hint.setText(f"完成！共 {len(articles)} 篇文章")
         self.status_hint.setStyleSheet(f"color: {COLORS['success']};")
         
-        # 播放任务完成音效
         play_sound('complete')
         
-        # 保存公众号到历史记录
         accounts = self.account_list.get_accounts()
         if accounts:
             self.account_list.add_to_history(accounts)
         
-        # 发射信号，跳转到结果页面，传递临时文件路径
         if len(accounts) == 1:
             source_info = f"爬取: {accounts[0]}"
         else:
             accounts_str = ', '.join(accounts[:3]) + ('...' if len(accounts) > 3 else '')
             source_info = f"批量爬取: {accounts_str} (共{len(accounts)}个公众号)"
         
-        # 传递临时文件路径，以便用户放弃时可以删除
-        temp_file = self._current_output_file or output_file
-        self.scrape_completed.emit(articles, source_info, temp_file)
+        self.scrape_completed.emit(articles, source_info, None)
     
     def _on_scrape_failed(self, error_msg):
         self.start_btn.show()
@@ -662,9 +645,7 @@ class UnifiedScrapePage(QWidget):
             else:
                 accounts_str = ', '.join(accounts[:3]) + ('...' if len(accounts) > 3 else '')
                 source_info = f"批量爬取(已取消): {accounts_str}"
-            # 传递临时文件路径
-            temp_file = self._current_output_file or ""
-            self.scrape_completed.emit(articles_before_cancel, source_info, temp_file)
+            self.scrape_completed.emit(articles_before_cancel, source_info, None)
     
     def _load_config(self):
         """从配置文件加载设置"""
