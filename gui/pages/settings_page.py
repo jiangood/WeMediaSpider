@@ -46,7 +46,7 @@ from ..utils import DEFAULT_OUTPUT_DIR
 # 这些值会在用户首次使用或恢复默认时生效
 DEFAULT_CONFIG = {
     'request_interval': 10,    # 请求间隔（秒）
-    'include_content': False,  # 是否默认获取正文
+    'include_content': True,   # 是否默认获取正文
     'cache_expire_hours': 96,  # 登录缓存有效期（小时）
 }
 
@@ -191,20 +191,13 @@ class SettingsPage(ScrollArea):
         # 请求间隔
         self._add_separator(scrape_layout)
         item2 = SettingItem("请求间隔", "每次请求之间的等待时间")
-        self.interval_spin = CustomSpinBox(1, 60, self.config.get('request_interval', 10))
-        self.interval_spin.setMinimumWidth(120)
-        item2.addControl(self.interval_spin)
+        self.interval_input = LineEdit()
+        self.interval_input.setPlaceholderText("10-60")
+        self.interval_input.setText(str(self.config.get('request_interval', 10)))
+        self.interval_input.setFixedWidth(120)
+        item2.addControl(self.interval_input)
         item2.addControl(BodyLabel("秒"))
         scrape_layout.addWidget(item2)
-        
-        self._add_separator(scrape_layout)
-        
-        # 获取正文
-        item4 = SettingItem("获取文章正文", "默认爬取文章内容（较慢）")
-        self.content_switch = SwitchButton()
-        self.content_switch.setChecked(self.config.get('include_content', False))
-        item4.addControl(self.content_switch)
-        scrape_layout.addWidget(item4)
         
         layout.addWidget(scrape_card)
         
@@ -320,9 +313,20 @@ class SettingsPage(ScrollArea):
         从界面控件收集配置值，保存到文件，并发射设置变更信号。
         """
         # 从界面控件收集配置值
+        try:
+            interval_val = int(self.interval_input.text())
+            if not (10 <= interval_val <= 60):
+                raise ValueError("超出范围")
+        except ValueError:
+            InfoBar.error(
+                title="输入错误", content="请求间隔必须是10-60之间的整数",
+                parent=self, position=InfoBarPosition.TOP, duration=3000
+            )
+            return
+
         self.config = {
-            'request_interval': self.interval_spin.value(),
-            'include_content': self.content_switch.isChecked(),
+            'request_interval': interval_val,
+            'include_content': True,  # 始终获取正文
             'cache_expire_hours': self.cache_spin.value(),
         }
         if self._save_config():
@@ -339,8 +343,7 @@ class SettingsPage(ScrollArea):
     
     def _on_reset(self):
         self.config = DEFAULT_CONFIG.copy()
-        self.interval_spin.setValue(self.config['request_interval'])
-        self.content_switch.setChecked(self.config['include_content'])
+        self.interval_input.setText(str(self.config['request_interval']))
         self.cache_spin.setValue(self.config['cache_expire_hours'])
         self._save_config()
         InfoBar.info(

@@ -332,11 +332,10 @@ class BatchWeChatScraper:
         
         # 默认配置
         self.default_config = {
-            'max_pages_per_account': 10,
+            'max_pages_per_account': 100,
             'request_interval': 10,
             'account_interval': (15, 30),
             'use_threading': False,
-            'max_workers': 3,
             'include_content': False,
             'content_keyword_filter': ''   # 正文关键词过滤
         }
@@ -421,11 +420,11 @@ class BatchWeChatScraper:
             # 单线程顺序爬取
             all_articles = self._process_accounts_sequential(config, accounts, start_date, end_date)
         
-        # 保存结果到CSV
+        # 保存结果到数据库
         if not self.is_cancelled:
-            output_file = config.get('output_file')
-            if output_file:
-                self.scraper.save_articles_to_db(all_articles, output_file)
+            db_path = config.get('db_path', '')
+            if db_path:
+                self.scraper.save_articles_to_db(all_articles, db_path)
             
             # 触发完成回调
             self._trigger_batch_completed(len(all_articles))
@@ -564,20 +563,27 @@ class BatchWeChatScraper:
         self._trigger_account_status(account_name, "fetching", "正在获取文章列表...")
         max_pages = config.get('max_pages_per_account', 100)
         
-        # 使用自定义方法获取文章，以便实时更新进度
-        all_articles = self._get_articles_with_progress(account_name, fakeid, max_pages, config)
-        
-        # 按日期过滤
-        self._trigger_account_status(account_name, "filtering", "正在按日期过滤文章...")
-        articles_in_range = self.scraper.filter_articles_by_date(all_articles, start_date, end_date)
+        # 使用自定义方法获取文章，翻页时按日期停止
+        articles_in_range = self._get_articles_with_progress(account_name, fakeid, max_pages, config, start_date)
         
         self._trigger_article_progress(
             self.total_articles_count + len(articles_in_range), 
-            f"{account_name}: 过滤后 {len(articles_in_range)} 篇文章"
+            f"{account_name}: 获取到 {len(articles_in_range)} 篇文章"
         )
         
         # 获取文章内容
         if config.get('include_content', False) and articles_in_range:
+            # 检查数据库中已存在的链接，避免重复请求
+            db_path = config.get('db_path', '')
+            existing_links = set()
+            if db_path:
+                try:
+                    db = Database(db_path)
+                    existing_links = db.get_existing_links()
+                    db.close()
+                except Exception as e:
+                    logger.warning(f"读取已有数据失败（不影响爬取）: {e}")
+
             total_content = len(articles_in_range)
             self._trigger_account_status(account_name, "content", f"正在获取 {total_content} 篇文章的内容...")
             
@@ -590,6 +596,10 @@ class BatchWeChatScraper:
                     i + 1, total_content,
                     f"{account_name}: 正在获取第 {i+1}/{total_content} 篇文章内容"
                 )
+                
+                # 跳过已存在的文章
+                if article.get('link') in existing_links:
+                    continue
                     
                 try:
                     # 获取内容
@@ -625,9 +635,15 @@ class BatchWeChatScraper:
         
         return articles_in_range
     
-    def _get_articles_with_progress(self, account_name, fakeid, max_pages, config):
-        """获取文章列表并实时更新进度"""
+    def _get_articles_with_progress(self, account_name, fakeid, max_pages, config, start_date=None):
+        """获取文章列表，翻页时按日期自动停止"""
         from spider.wechat.utils import get_articles_list, format_time
+        
+        # 将 start_date 转为时间戳（当日 00:00:00）
+        start_timestamp = 0
+        if start_date:
+            from datetime import datetime
+            start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp())
         
         all_articles = []
         page_start = 0
@@ -653,18 +669,26 @@ class BatchWeChatScraper:
             if not titles:
                 break  # 没有更多文章
             
-            # 构建文章信息
+            # 构建文章信息，同时检查日期
+            page_has_valid = False
             for title, link, update_time in zip(titles, links, update_times):
+                ts = int(update_time)
                 article = {
                     'name': account_name,
                     'title': title,
                     'link': link,
-                    'publish_timestamp': int(update_time),
+                    'publish_timestamp': ts,
                     'publish_time': format_time(update_time),
                     'digest': '',
                     'content': ''
                 }
-                all_articles.append(article)
+                if ts >= start_timestamp:
+                    page_has_valid = True
+                    all_articles.append(article)
+            
+            # 如果本页所有文章都早于 start_date，停止翻页
+            if not page_has_valid:
+                break
             
             page_start += 5
             
@@ -857,11 +881,11 @@ class AsyncBatchWeChatScraper:
                 self._async_scrape_all(config, start_date, end_date)
             )
             
-            # 保存结果到CSV
+            # 保存结果到数据库
             if not self.is_cancelled:
-                output_file = config.get('output_file')
-                if output_file and all_articles:
-                    self._save_articles_to_db(all_articles, output_file)
+                db_path = config.get('db_path', '')
+                if db_path and all_articles:
+                    self._save_articles_to_db(all_articles, db_path)
                 
                 # 触发完成回调
                 self._trigger_batch_completed(len(all_articles))

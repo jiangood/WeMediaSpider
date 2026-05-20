@@ -21,10 +21,10 @@
     - 底部：进度条和操作按钮
 
 技术实现：
-    - 使用异步爬虫 AsyncBatchWeChatScraper 进行数据抓取
+    - 使用同步批量爬虫 BatchWeChatScraper 进行数据抓取
     - 通过 QThread 工作线程避免界面阻塞
     - 支持爬取过程中取消操作
-    - 自动保存爬取结果到 CSV 文件
+    - 爬取结果存储到 SQLite 数据库
 """
 
 from PyQt6.QtWidgets import (
@@ -46,9 +46,9 @@ from qfluentwidgets import TableWidget as FluentTable
 
 from ..styles import COLORS
 from ..widgets import CardWidget as CustomCard, ProgressWidget, AccountListWidget, CustomSpinBox
-from ..workers import AsyncBatchScrapeWorker
+from ..workers import BatchScrapeWorker
 from ..utils import DEFAULT_OUTPUT_DIR, DB_PATH, play_sound
-from spider.wechat.scraper import AsyncBatchWeChatScraper
+from spider.wechat.scraper import BatchWeChatScraper
 
 # ============================================================
 # 配置常量定义
@@ -262,9 +262,11 @@ class UnifiedScrapePage(QWidget):
         grid.addWidget(BodyLabel("请求间隔"), 0, 0)
         interval_container = QHBoxLayout()
         interval_container.setSpacing(4)
-        self.interval_spin = CustomSpinBox(1, 60, self.config.get('request_interval', 10))
-        self.interval_spin.setFixedWidth(120)  # 增加宽度避免重叠
-        interval_container.addWidget(self.interval_spin)
+        self.interval_input = LineEdit()
+        self.interval_input.setPlaceholderText("10-60")
+        self.interval_input.setText(str(self.config.get('request_interval', 10)))
+        self.interval_input.setFixedWidth(120)
+        interval_container.addWidget(self.interval_input)
         interval_unit = BodyLabel("秒")
         interval_unit.setStyleSheet("color: #888; font-size: 12px;")
         interval_container.addWidget(interval_unit)
@@ -274,48 +276,12 @@ class UnifiedScrapePage(QWidget):
         # 第二行：日期范围（选项模式）
         grid.addWidget(BodyLabel("日期范围"), 1, 0)
         self.date_combo = ComboBox()
-        self.date_combo.addItems(["本月", "本季度", "本年", "最近3年", "最近5年", "全部"])
+        self.date_combo.addItems(["最近7天", "本月", "本季度", "本年", "最近3年", "最近5年", "全部"])
         self.date_combo.setCurrentIndex(0)
         self.date_combo.setMinimumWidth(150)
         grid.addWidget(self.date_combo, 1, 1, 1, 3)
         
-        # 第三行：获取正文
-        grid.addWidget(BodyLabel(""), 2, 0)
-        self.content_check = CheckBox("获取正文内容（较慢）")
-        self.content_check.setChecked(self.config.get('include_content', False))
-        self.content_check.stateChanged.connect(self._on_content_check_changed)
-        # 强制设置 CheckBox 透明背景
-        self.content_check.setStyleSheet("""
-            CheckBox, QCheckBox {
-                background-color: transparent;
-                background: transparent;
-                color: #ffffff;
-            }
-            CheckBox::indicator, QCheckBox::indicator {
-                background-color: #3d3d3d;
-                border: 1px solid #555555;
-                border-radius: 3px;
-            }
-            CheckBox::indicator:checked, QCheckBox::indicator:checked {
-                background-color: #07C160;
-                border-color: #07C160;
-            }
-        """)
-        grid.addWidget(self.content_check, 2, 2, 1, 2)
-        
         config_layout.addLayout(grid)
-        
-        # 第四行：正文过滤 | 输出目录（对称布局）
-        grid.addWidget(BodyLabel("正文过滤"), 3, 0)
-        self.keyword_filter_input = LineEdit()
-        self.keyword_filter_input.setPlaceholderText("输入关键词过滤正文")
-        self.keyword_filter_input.setEnabled(self.config.get('include_content', False))
-        self.keyword_filter_input.setToolTip("只保留正文中包含该关键词的文章（需勾选获取正文）")
-        self.keyword_filter_input.setMaximumWidth(200)
-        grid.addWidget(self.keyword_filter_input, 3, 1)
-        
-        grid.addWidget(BodyLabel(""), 3, 2)
-        grid.addWidget(BodyLabel(""), 3, 3)
         
         right_layout.addWidget(config_card)
         
@@ -351,21 +317,6 @@ class UnifiedScrapePage(QWidget):
         right_layout.addWidget(status_card, 1)
         parent_layout.addWidget(right_container, 1)
     
-    def _on_content_check_changed(self, state):
-        """
-        获取正文复选框状态变化处理
-        
-        当用户勾选或取消"获取正文内容"选项时，
-        同步更新正文关键词过滤输入框的启用状态。
-        
-        Args:
-            state: 复选框状态值
-        """
-        is_checked = state == Qt.CheckState.Checked.value
-        self.keyword_filter_input.setEnabled(is_checked)
-        if not is_checked:
-            self.keyword_filter_input.clear()
-    
     def _on_start_scrape(self):
         """开始爬取"""
         accounts = self.account_list.get_accounts()
@@ -386,7 +337,9 @@ class UnifiedScrapePage(QWidget):
         from datetime import datetime, timedelta
         today = datetime.now()
         date_option = self.date_combo.currentText()
-        if date_option == "本月":
+        if date_option == "最近7天":
+            start = today - timedelta(days=6)
+        elif date_option == "本月":
             start = today.replace(day=1)
         elif date_option == "本季度":
             quarter_start_month = ((today.month - 1) // 3) * 3 + 1
@@ -400,18 +353,15 @@ class UnifiedScrapePage(QWidget):
         else:
             start = today.replace(year=today.year - 10, month=1, day=1)
         
-        # 获取正文关键词过滤
-        keyword_filter = self.keyword_filter_input.text().strip() if self.content_check.isChecked() else ""
-        
-        # 使用异步模式
+        # 默认获取正文，不使用过滤
         config = {
             'accounts': accounts,
             'start_date': start.strftime("%Y-%m-%d"),
             'end_date': today.strftime("%Y-%m-%d"),
             'token': token, 'headers': headers,
-            'request_interval': self.interval_spin.value(),
-            'include_content': self.content_check.isChecked(),
-            'content_keyword_filter': keyword_filter,  # 正文关键词过滤
+            'request_interval': int(self.interval_input.text()) if self.interval_input.text().isdigit() else 10,
+            'include_content': True,
+            'content_keyword_filter': '',  # 正文关键词过滤
             'db_path': DB_PATH
         }
         
@@ -446,9 +396,9 @@ class UnifiedScrapePage(QWidget):
         self._current_account_index = 0
         self._article_count = 0
         
-        # 启动爬取 - 使用异步爬虫
-        self.batch_scraper = AsyncBatchWeChatScraper()
-        self.scrape_worker = AsyncBatchScrapeWorker(self.batch_scraper, config)
+        # 启动爬取 - 使用同步爬虫（单IP避免反爬）
+        self.batch_scraper = BatchWeChatScraper()
+        self.scrape_worker = BatchScrapeWorker(self.batch_scraper, config)
         self.scrape_worker.progress_update.connect(self._on_progress_update)
         self.scrape_worker.account_status.connect(self._on_account_status)
         self.scrape_worker.scrape_success.connect(self._on_scrape_success)
@@ -591,12 +541,5 @@ class UnifiedScrapePage(QWidget):
         
         # 应用到UI控件
         if 'request_interval' in config:
-            self.interval_spin.setValue(config['request_interval'])
-        
-        if 'include_content' in config:
-            self.content_check.setChecked(config['include_content'])
-            # 同时更新关键词过滤输入框的启用状态
-            self.keyword_filter_input.setEnabled(config['include_content'])
-            if not config['include_content']:
-                self.keyword_filter_input.clear()
+            self.interval_input.setText(str(config['request_interval']))
         

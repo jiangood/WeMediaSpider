@@ -37,18 +37,22 @@
     4. 流畅的悬停和点击动画
 """
 
+import re
+import os
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
-    QDialog, QLabel, QScrollArea, QApplication, QFrame
+    QDialog, QLabel, QScrollArea, QApplication, QFrame, QTextBrowser
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QUrl, QSize
+from PyQt6.QtCore import pyqtSignal, Qt, QUrl, QSize, QTimer
 from PyQt6.QtGui import QDesktopServices, QKeyEvent, QCursor
 
 from qfluentwidgets import (
     CardWidget as FluentCard, PrimaryPushButton, PushButton,
     ProgressBar, BodyLabel, StrongBodyLabel, CaptionLabel,
     IconWidget, FluentIcon, PlainTextEdit, SpinBox, setCustomStyleSheet,
-    TitleLabel, TextEdit, ToolTipFilter, ToolTipPosition, FlowLayout
+    TitleLabel, ToolTipFilter, ToolTipPosition, FlowLayout,
+    LineEdit, TextEdit, InfoBar, InfoBarPosition
 )
 
 from .styles import COLORS
@@ -737,11 +741,11 @@ class ArticlePreviewDialog(QDialog):
             }}
         """)
         
-        # 内容文本框
-        self.content_text = TextEdit()
-        self.content_text.setReadOnly(True)
+        # 内容文本框（支持 HTML 渲染）
+        self.content_text = QTextBrowser()
+        self.content_text.setOpenExternalLinks(True)
         self.content_text.setStyleSheet(f"""
-            TextEdit {{
+            QTextBrowser {{
                 background-color: {COLORS['surface']};
                 color: {COLORS['text']};
                 border: none;
@@ -750,7 +754,6 @@ class ArticlePreviewDialog(QDialog):
                 line-height: 1.8;
             }}
         """)
-        self.content_text.setPlaceholderText("无内容")
         
         scroll_area.setWidget(self.content_text)
         content_layout.addWidget(scroll_area)
@@ -833,9 +836,13 @@ class ArticlePreviewDialog(QDialog):
         pub_time = article.get('发布时间', '-')
         self.time_label.setText(f"📅 发布时间: {pub_time}")
         
-        # 更新内容
+        # 更新内容（Markdown 转 HTML）
         content = article.get('内容', '')
-        self.content_text.setText(content if content else "无内容")
+        if content:
+            html = self._markdown_to_html(content)
+            self.content_text.setHtml(html)
+        else:
+            self.content_text.setHtml("<p style='color: #999; text-align: center; padding: 40px;'>无内容</p>")
         
         # 滚动到顶部
         self.content_text.verticalScrollBar().setValue(0)
@@ -883,6 +890,208 @@ class ArticlePreviewDialog(QDialog):
         if 0 <= index < len(self.articles):
             self.current_index = index
             self._update_display()
+
+    def _markdown_to_html(self, md_text):
+        if not md_text:
+            return ''
+
+        try:
+            import markdown
+            return markdown.markdown(md_text, extensions=['tables', 'fenced_code'])
+        except ImportError:
+            html = (str(md_text)
+                    .replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;'))
+            html = html.replace('\n\n', '</p><p>')
+            html = html.replace('\n', '<br>')
+            html = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1" style="max-width:100%;">', html)
+            html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
+            return f'<p>{html}</p>'
+
+
+class ImageExtractDialog(QDialog):
+    def __init__(self, article_url, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("提取图片")
+        self.setModal(True)
+        self.resize(560, 420)
+        self.worker = None
+        self._output_folder = None
+        self._image_urls = []
+
+        screen = QApplication.primaryScreen()
+        if screen:
+            sg = screen.availableGeometry()
+            self.move((sg.width() - 560) // 2, (sg.height() - 420) // 2)
+
+        self._setup_ui()
+        self.url_input.setText(article_url)
+        QTimer.singleShot(100, self._on_start_extract)
+
+    def _setup_ui(self):
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {COLORS['background']}; }}
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        title = TitleLabel("提取图片")
+        layout.addWidget(title)
+
+        url_row = QHBoxLayout()
+        url_label = BodyLabel("文章链接:")
+        url_label.setFixedWidth(65)
+        url_row.addWidget(url_label)
+        self.url_input = LineEdit()
+        self.url_input.setReadOnly(True)
+        url_row.addWidget(self.url_input)
+        layout.addLayout(url_row)
+
+        info_row = QHBoxLayout()
+        info_label = BodyLabel("文章标题:")
+        info_label.setFixedWidth(65)
+        info_row.addWidget(info_label)
+        self.article_title_label = BodyLabel("等待提取...")
+        self.article_title_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        info_row.addWidget(self.article_title_label, 1)
+        layout.addLayout(info_row)
+
+        count_row = QHBoxLayout()
+        cnt_label = BodyLabel("图片数量:")
+        cnt_label.setFixedWidth(65)
+        count_row.addWidget(cnt_label)
+        self.image_count_label = BodyLabel("0")
+        count_row.addWidget(self.image_count_label)
+        count_row.addStretch()
+        layout.addLayout(count_row)
+
+        list_label = BodyLabel("图片列表:")
+        layout.addWidget(list_label)
+
+        self.image_list_text = TextEdit()
+        self.image_list_text.setReadOnly(True)
+        self.image_list_text.setPlaceholderText("提取的图片链接将显示在这里...")
+        self.image_list_text.setStyleSheet(f"""
+            TextEdit {{
+                background-color: {COLORS['surface']};
+                color: {COLORS['text']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 13px;
+            }}
+        """)
+        layout.addWidget(self.image_list_text, 1)
+
+        progress_layout = QHBoxLayout()
+        self.progress_bar = ProgressBar()
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.hide()
+        progress_layout.addWidget(self.progress_bar)
+        layout.addLayout(progress_layout)
+
+        self.status_label = CaptionLabel("")
+        self.status_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        layout.addWidget(self.status_label)
+
+        btn_row = QHBoxLayout()
+        self.cancel_btn = PushButton("取消", icon=FluentIcon.CLOSE)
+        self.cancel_btn.clicked.connect(self._on_cancel)
+        btn_row.addWidget(self.cancel_btn)
+
+        self.open_folder_btn = PushButton("打开文件夹", icon=FluentIcon.FOLDER)
+        self.open_folder_btn.clicked.connect(self._on_open_folder)
+        self.open_folder_btn.hide()
+        btn_row.addWidget(self.open_folder_btn)
+
+        btn_row.addStretch()
+        close_btn = PrimaryPushButton("关闭", icon=FluentIcon.CLOSE)
+        close_btn.clicked.connect(self.close)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+    def _on_start_extract(self):
+        from gui.pages.article_image_page import ImageExtractWorker
+        from gui.utils import DEFAULT_OUTPUT_DIR
+        import os
+
+        url = self.url_input.text().strip()
+        if not url:
+            return
+
+        output_dir = DEFAULT_OUTPUT_DIR
+        os.makedirs(output_dir, exist_ok=True)
+
+        self._image_urls = []
+        self.article_title_label.setText("提取中...")
+        self.image_list_text.clear()
+        self.image_count_label.setText("0")
+        self.progress_bar.show()
+        self.progress_bar.setValue(0)
+        self.cancel_btn.show()
+        self.open_folder_btn.hide()
+        self.status_label.setText("正在提取...")
+
+        self.worker = ImageExtractWorker(url=url, output_dir=output_dir, save_images=True)
+        self.worker.progress_update.connect(self._on_progress_update)
+        self.worker.image_found.connect(self._on_image_found)
+        self.worker.extract_success.connect(self._on_extract_success)
+        self.worker.extract_failed.connect(self._on_extract_failed)
+        self.worker.download_progress.connect(self._on_download_progress)
+        self.worker.download_complete.connect(self._on_download_complete)
+        self.worker.start()
+
+    def _on_cancel(self):
+        if self.worker:
+            self.worker.cancel()
+            self.worker = None
+        self.cancel_btn.hide()
+        self.progress_bar.hide()
+        self.status_label.setText("已取消")
+
+    def _on_open_folder(self):
+        if self._output_folder:
+            os.startfile(self._output_folder)
+
+    def _on_progress_update(self, current, total, message):
+        if total > 0:
+            self.progress_bar.setValue(int(current * 100 / total))
+        self.status_label.setText(message)
+
+    def _on_image_found(self, index, url, alt):
+        self._image_urls.append((index, url, alt))
+        self.image_count_label.setText(str(len(self._image_urls)))
+        current_text = self.image_list_text.toPlainText()
+        self.image_list_text.setPlainText(current_text + f"{index}. {url[:80]}{'...' if len(url) > 80 else ''}\n")
+
+    def _on_download_progress(self, current, total, message):
+        progress = 70 + int(current * 30 / total)
+        self.progress_bar.setValue(progress)
+        self.status_label.setText(message)
+
+    def _on_extract_success(self, title, images, md_content):
+        self.article_title_label.setText(title)
+        self.article_title_label.setStyleSheet(f"color: {COLORS['success']};")
+        self.image_count_label.setText(str(len(images)))
+        self.cancel_btn.hide()
+        self.progress_bar.setValue(100)
+
+        InfoBar.success(title="提取成功", content=f"共提取 {len(images)} 张图片", parent=self, position=InfoBarPosition.TOP, duration=3000)
+
+    def _on_extract_failed(self, error_msg):
+        self.cancel_btn.hide()
+        self.progress_bar.hide()
+        self.status_label.setText(f"失败: {error_msg}")
+        self.status_label.setStyleSheet(f"color: {COLORS['error']};")
+        InfoBar.error(title="提取失败", content=error_msg, parent=self, position=InfoBarPosition.TOP, duration=5000)
+
+    def _on_download_complete(self, folder_path):
+        self._output_folder = folder_path
+        self.open_folder_btn.show()
+        self.status_label.setText(f"完成！保存到: {folder_path}")
+        self.status_label.setStyleSheet(f"color: {COLORS['success']};")
 
 
 # ============== 历史记录标签组件 ==============

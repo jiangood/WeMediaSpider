@@ -87,6 +87,10 @@ class Database:
         row = self.conn.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
         return row['cnt']
 
+    def get_existing_links(self) -> set:
+        rows = self.conn.execute("SELECT link FROM articles").fetchall()
+        return {r['link'] for r in rows}
+
     def search_articles(self, keyword: str) -> List[Dict]:
         rows = self.conn.execute(
             "SELECT a.account_name, a.title, a.publish_time, a.link, a.content "

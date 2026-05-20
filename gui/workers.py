@@ -37,6 +37,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from datetime import datetime, timedelta
 import time
 import os
+import traceback
 
 
 class BatchScrapeWorker(QThread):
@@ -144,6 +145,7 @@ class BatchScrapeWorker(QThread):
             self.scrape_success.emit(self.articles, db_path)
             
         except Exception as e:
+            traceback.print_exc()
             self.scrape_failed.emit(f"批量爬取出错: {str(e)}")
 
 

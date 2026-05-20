@@ -11,7 +11,6 @@
     - 自适应屏幕分辨率的窗口大小设置
     - 侧边导航栏管理（支持折叠和展开）
     - 多页面路由和切换
-    - 未保存数据的退出确认
     - 页面间信号通信
 
 屏幕适配策略:
@@ -20,7 +19,6 @@
     - 大屏幕 (大于1920px): 最小 1400x870，默认 75% 屏幕宽度
 
 类说明:
-    - ClickOutsideMessageBox: 支持点击遮罩层关闭的消息框
     - MainWindow: 主窗口类，管理所有页面和导航
 """
 
@@ -30,56 +28,11 @@ from PyQt6.QtGui import QIcon, QCloseEvent, QScreen
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon,
-    setTheme, Theme, SplashScreen, MessageBox
+    setTheme, Theme, SplashScreen
 )
-from PyQt6.QtGui import QMouseEvent
 
-from .pages import WelcomePage, LoginPage, UnifiedScrapePage, ResultsPage, SettingsPage, ArticleImagePage, ContentSearchPage
+from .pages import WelcomePage, LoginPage, UnifiedScrapePage, ResultsPage, SettingsPage
 from .app import apply_label_transparent_background
-
-
-class ClickOutsideMessageBox(MessageBox):
-    """支持点击遮罩层关闭的消息框
-    
-    继承自 qfluentwidgets 的 MessageBox，增加了点击对话框外部区域
-    （即遮罩层）时自动关闭的功能。这提供了更好的用户体验，用户可以
-    通过点击空白区域来取消操作。
-    
-    Attributes:
-        _clicked_outside: 标记是否通过点击外部关闭
-    """
-    
-    def __init__(self, title: str, content: str, parent=None):
-        """初始化消息框
-        
-        Args:
-            title: 对话框标题
-            content: 对话框内容文本
-            parent: 父窗口，用于模态显示和居中定位
-        """
-        super().__init__(title, content, parent)
-        self._clicked_outside = False
-    
-    def mousePressEvent(self, event: QMouseEvent):
-        """处理鼠标按下事件，检测是否点击在对话框外部"""
-        # 获取内部对话框widget的几何区域
-        if hasattr(self, 'widget') and self.widget:
-            widget_rect = self.widget.geometry()
-            if not widget_rect.contains(event.pos()):
-                # 点击在对话框外部，标记并关闭
-                self._clicked_outside = True
-                self.reject()
-                return
-        super().mousePressEvent(event)
-    
-    def was_clicked_outside(self) -> bool:
-        """检查对话框是否通过点击外部区域关闭
-        
-        Returns:
-            True 表示用户点击了对话框外部区域关闭，
-            False 表示用户点击了按钮或按 ESC 关闭
-        """
-        return self._clicked_outside
 
 
 class MainWindow(FluentWindow):
@@ -92,9 +45,7 @@ class MainWindow(FluentWindow):
         - welcome_page: 欢迎页面，显示应用介绍和快速入口
         - login_page: 登录页面，管理微信登录状态
         - scrape_page: 爬取页面，配置和执行公众号爬取任务
-        - article_image_page: 图片提取页面，从文章中提取图片
-        - results_page: 结果页面，查看和导出爬取结果
-        - content_search_page: 内容搜索页面，搜索文章内容
+        - results_page: 结果页面，查看、搜索和导出爬取结果
         - settings_page: 设置页面，配置应用参数
     
     Attributes:
@@ -258,8 +209,6 @@ class MainWindow(FluentWindow):
         self.scrape_page = UnifiedScrapePage(
             self.login_page.get_login_manager(), self
         )
-        self.article_image_page = ArticleImagePage(self)
-        self.content_search_page = ContentSearchPage(self)
         self.settings_page = SettingsPage(self)
         
         # 延迟应用标签透明背景，确保所有组件都已创建
@@ -275,25 +224,16 @@ class MainWindow(FluentWindow):
             self.login_page,
             self.results_page,
             self.scrape_page,
-            self.article_image_page,
-            self.content_search_page,
             self.settings_page
         ]
         for page in pages:
             apply_label_transparent_background(page)
     
     def _connect_signals(self):
-        """连接页面间的信号
-        
-        建立页面之间的通信机制，实现爬取完成跳转、数据放弃返回、
-        图片提取请求和设置同步等功能。
-        """
         # 爬取完成信号
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)
         # 数据放弃信号
         self.results_page.data_discarded.connect(self._on_data_discarded)
-        # 图片提取请求信号
-        self.results_page.extract_images_requested.connect(self._on_extract_images_requested)
         # 设置变更信号 - 同步到爬取页面
         self.settings_page.settings_changed.connect(self._on_settings_changed)
     
@@ -301,20 +241,15 @@ class MainWindow(FluentWindow):
         """处理设置变更事件，将新配置同步到爬取页面"""
         self.scrape_page.apply_settings(config)
     
-    def _on_scrape_completed(self, articles: list, source_info: str, temp_file_path: str):
+    def _on_scrape_completed(self, articles: list, source_info: str):
         """处理爬取完成事件，加载结果数据并切换到结果页面"""
-        self.results_page.load_articles_data(articles, source_info, temp_file_path)
+        self.results_page.load_articles_data(articles, source_info)
         self.switchTo(self.results_page)
     
     def _on_data_discarded(self):
         """处理数据放弃事件，返回到爬取页面"""
         self.switchTo(self.scrape_page)
-    
-    def _on_extract_images_requested(self, url: str):
-        """处理图片提取请求，跳转到图片提取页面并填充链接"""
-        self.article_image_page.set_article_url(url)
-        self.switchTo(self.article_image_page)
-    
+
     def _init_navigation(self):
         """初始化侧边导航项
         
@@ -333,14 +268,9 @@ class MainWindow(FluentWindow):
             self.scrape_page, FluentIcon.DOWNLOAD, "公众号爬取"
         )
         self.addSubInterface(
-            self.article_image_page, FluentIcon.PHOTO, "图片提取"
+            self.results_page, FluentIcon.PIE_SINGLE, "文章列表"
         )
-        self.addSubInterface(
-            self.results_page, FluentIcon.PIE_SINGLE, "结果查看"
-        )
-        self.addSubInterface(
-            self.content_search_page, FluentIcon.SEARCH, "内容搜索"
-        )
+
         
         self.addSubInterface(
             self.settings_page, FluentIcon.SETTING, "设置",
@@ -348,42 +278,4 @@ class MainWindow(FluentWindow):
         )
     
     def closeEvent(self, event: QCloseEvent):
-        if self.results_page.has_unsaved_data():
-            msg_box = ClickOutsideMessageBox(
-                "未保存的数据",
-                f"您有 {len(self.results_page.articles)} 条爬取结果尚未保存。\n\n请选择操作：",
-                self
-            )
-
-            msg_box.yesButton.setText("保存")
-            msg_box.yesButton.setFixedWidth(110)
-            msg_box.cancelButton.setText("放弃")
-            msg_box.cancelButton.setFixedWidth(110)
-            msg_box.buttonLayout.setSpacing(16)
-
-            user_choice = {'action': None}
-
-            def on_save():
-                user_choice['action'] = 'save'
-
-            def on_discard():
-                user_choice['action'] = 'discard'
-
-            msg_box.yesButton.clicked.connect(on_save)
-            msg_box.cancelButton.clicked.connect(on_discard)
-
-            msg_box.exec()
-
-            if user_choice['action'] == 'save':
-                self.results_page._on_save_results()
-                if self.results_page.has_unsaved_data():
-                    event.ignore()
-                    return
-                event.accept()
-            elif user_choice['action'] == 'discard':
-                self.results_page._clear_unsaved_data()
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
+        event.accept()
