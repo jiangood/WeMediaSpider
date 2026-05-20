@@ -60,7 +60,6 @@ CONFIG_FILE = 'config.json'
 # 默认爬取配置参数
 # 这些值会在用户首次使用时生效，之后会从配置文件加载
 DEFAULT_CONFIG = {
-    'max_pages': 10,           # 每个公众号最多爬取的页数
     'request_interval': 10,    # 请求间隔（秒），避免触发反爬
     'include_content': False,  # 是否获取文章正文内容
     'cache_expire_hours': 96,  # 登录缓存有效期（小时）
@@ -259,13 +258,8 @@ class UnifiedScrapePage(QWidget):
         grid.setSpacing(8)
         grid.setContentsMargins(0, 0, 0, 0)
         
-        # 第一行：最大页数 | 请求间隔
-        grid.addWidget(BodyLabel("最大页数"), 0, 0)
-        self.pages_spin = CustomSpinBox(1, 100, self.config.get('max_pages', 10))
-        self.pages_spin.setFixedWidth(120)  # 增加宽度避免重叠
-        grid.addWidget(self.pages_spin, 0, 1)
-        
-        grid.addWidget(BodyLabel("请求间隔"), 0, 2)
+        # 第一行：请求间隔
+        grid.addWidget(BodyLabel("请求间隔"), 0, 0)
         interval_container = QHBoxLayout()
         interval_container.setSpacing(4)
         self.interval_spin = CustomSpinBox(1, 60, self.config.get('request_interval', 10))
@@ -415,7 +409,6 @@ class UnifiedScrapePage(QWidget):
             'start_date': start.strftime("%Y-%m-%d"),
             'end_date': today.strftime("%Y-%m-%d"),
             'token': token, 'headers': headers,
-            'max_pages_per_account': self.pages_spin.value(),
             'request_interval': self.interval_spin.value(),
             'include_content': self.content_check.isChecked(),
             'content_keyword_filter': keyword_filter,  # 正文关键词过滤
@@ -597,9 +590,6 @@ class UnifiedScrapePage(QWidget):
         self.config.update(config)
         
         # 应用到UI控件
-        if 'max_pages' in config:
-            self.pages_spin.setValue(config['max_pages'])
-        
         if 'request_interval' in config:
             self.interval_spin.setValue(config['request_interval'])
         

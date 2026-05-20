@@ -45,13 +45,8 @@ from ..utils import DEFAULT_OUTPUT_DIR
 # 默认配置参数
 # 这些值会在用户首次使用或恢复默认时生效
 DEFAULT_CONFIG = {
-    'max_pages': 10,           # 每个公众号最多爬取的页数
     'request_interval': 10,    # 请求间隔（秒）
-    'account_interval_min': 15,  # 公众号切换最小间隔（秒）
-    'account_interval_max': 30,  # 公众号切换最大间隔（秒）
-    'max_workers': 3,          # 默认并发数
     'include_content': False,  # 是否默认获取正文
-    'output_dir': DEFAULT_OUTPUT_DIR,  # 输出目录
     'cache_expire_hours': 96,  # 登录缓存有效期（小时）
 }
 
@@ -193,31 +188,14 @@ class SettingsPage(ScrollArea):
         scrape_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #ffffff;")
         scrape_layout.addWidget(scrape_title)
         
-        # 最大页数
-        item1 = SettingItem("默认最大页数", "每个公众号最多爬取的页数")
-        self.pages_spin = CustomSpinBox(1, 100, self.config.get('max_pages', 10))
-        self.pages_spin.setMinimumWidth(120)
-        item1.addControl(self.pages_spin)
-        scrape_layout.addWidget(item1)
-        
-        self._add_separator(scrape_layout)
-        
         # 请求间隔
+        self._add_separator(scrape_layout)
         item2 = SettingItem("请求间隔", "每次请求之间的等待时间")
         self.interval_spin = CustomSpinBox(1, 60, self.config.get('request_interval', 10))
         self.interval_spin.setMinimumWidth(120)
         item2.addControl(self.interval_spin)
         item2.addControl(BodyLabel("秒"))
         scrape_layout.addWidget(item2)
-        
-        self._add_separator(scrape_layout)
-        
-        # 线程数
-        item3 = SettingItem("默认线程数", "批量爬取时的并发数")
-        self.workers_spin = CustomSpinBox(1, 10, self.config.get('max_workers', 3))
-        self.workers_spin.setMinimumWidth(120)
-        item3.addControl(self.workers_spin)
-        scrape_layout.addWidget(item3)
         
         self._add_separator(scrape_layout)
         
@@ -239,19 +217,6 @@ class SettingsPage(ScrollArea):
         storage_title = BodyLabel("存储设置")
         storage_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #ffffff;")
         storage_layout.addWidget(storage_title)
-        
-        # 输出目录
-        item5 = SettingItem("默认输出目录", "爬取结果保存位置")
-        self.output_input = LineEdit()
-        # 获取配置中的输出目录，如果是旧值 'results' 则使用新的默认路径
-        config_output_dir = self.config.get('output_dir', DEFAULT_OUTPUT_DIR)
-        if config_output_dir == 'results':
-            config_output_dir = DEFAULT_OUTPUT_DIR
-        self.output_input.setText(config_output_dir)
-        self.output_input.setMinimumWidth(150)
-        self.output_input.setMaximumWidth(250)  # 限制最大宽度，给按钮留出空间
-        item5.addControl(self.output_input)
-        storage_layout.addWidget(item5)
         
         self._add_separator(storage_layout)
         
@@ -356,11 +321,8 @@ class SettingsPage(ScrollArea):
         """
         # 从界面控件收集配置值
         self.config = {
-            'max_pages': self.pages_spin.value(),
             'request_interval': self.interval_spin.value(),
-            'max_workers': self.workers_spin.value(),
             'include_content': self.content_switch.isChecked(),
-            'output_dir': self.output_input.text().strip() or DEFAULT_OUTPUT_DIR,
             'cache_expire_hours': self.cache_spin.value(),
         }
         if self._save_config():
@@ -377,11 +339,8 @@ class SettingsPage(ScrollArea):
     
     def _on_reset(self):
         self.config = DEFAULT_CONFIG.copy()
-        self.pages_spin.setValue(self.config['max_pages'])
         self.interval_spin.setValue(self.config['request_interval'])
-        self.workers_spin.setValue(self.config['max_workers'])
         self.content_switch.setChecked(self.config['include_content'])
-        self.output_input.setText(self.config['output_dir'])
         self.cache_spin.setValue(self.config['cache_expire_hours'])
         self._save_config()
         InfoBar.info(

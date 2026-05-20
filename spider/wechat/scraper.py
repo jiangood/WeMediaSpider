@@ -889,11 +889,9 @@ class AsyncBatchWeChatScraper:
         accounts = config['accounts']
         token = config['token']
         headers = config['headers']
-        max_pages = config.get('max_pages_per_account', 10)
+        max_pages = config.get('max_pages_per_account', 100)
         include_content = config.get('include_content', False)
         content_keyword_filter = config.get('content_keyword_filter', '')  # 正文关键词过滤
-        max_concurrent_accounts = config.get('max_concurrent_accounts', 3)
-        max_concurrent_requests = config.get('max_concurrent_requests', 5)
         
         # 控制并发的信号量
         account_semaphore = asyncio.Semaphore(max_concurrent_accounts)
