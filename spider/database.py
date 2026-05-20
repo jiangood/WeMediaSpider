@@ -50,21 +50,18 @@ class Database:
     def save_articles(self, articles: List[Dict]) -> int:
         count = 0
         for article in articles:
-            try:
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO articles (account_name, title, publish_time, link, content) VALUES (?, ?, ?, ?, ?)",
-                    (
-                        article.get('name', ''),
-                        article.get('title', ''),
-                        article.get('publish_time', '') or article.get('time', ''),
-                        article.get('link', ''),
-                        article.get('content', '')
-                    )
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO articles (account_name, title, publish_time, link, content) VALUES (?, ?, ?, ?, ?)",
+                (
+                    article.get('name', ''),
+                    article.get('title', ''),
+                    article.get('publish_time', '') or article.get('time', ''),
+                    article.get('link', ''),
+                    article.get('content', '')
                 )
-                if self.conn.total_changes > count:
-                    count += 1
-            except Exception:
-                continue
+            )
+            if cursor.rowcount > 0:
+                count += 1
         self.conn.commit()
         return count
 
@@ -100,9 +97,9 @@ class Database:
         return [dict(r) for r in rows]
 
     def delete_article(self, link: str) -> bool:
-        self.conn.execute("DELETE FROM articles WHERE link = ?", (link,))
+        cursor = self.conn.execute("DELETE FROM articles WHERE link = ?", (link,))
         self.conn.commit()
-        return True
+        return cursor.rowcount > 0
 
     def clear(self):
         self.conn.executescript("DELETE FROM articles; DELETE FROM articles_fts;")
@@ -110,3 +107,9 @@ class Database:
 
     def close(self):
         self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
