@@ -49,7 +49,7 @@ from PyQt6.QtGui import QDesktopServices, QKeyEvent, QCursor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from qfluentwidgets import (
-    CardWidget as FluentCard, PrimaryPushButton, PushButton,
+    CardWidget as FluentCard, PrimaryPushButton, PushButton, BodyLabel,
     ProgressBar, BodyLabel, StrongBodyLabel, CaptionLabel,
     IconWidget, FluentIcon, PlainTextEdit, SpinBox, setCustomStyleSheet,
     TitleLabel, ToolTipFilter, ToolTipPosition, FlowLayout,
@@ -807,12 +807,17 @@ class ArticlePreviewDialog(QDialog):
         pub_time = article.get('发布时间', '-')
         self.time_label.setText(f"📅 发布时间: {pub_time}")
         
-        # 更新内容（WebView渲染HTML）
-        content = article.get('内容', '')
-        if content:
-            self.content_text.setHtml(content, QUrl("https://mp.weixin.qq.com"))
+        # === 修改：尝试加载本地 PDF，失败回退 HTML ===
+        pdf_path = self._find_pdf(article)
+        if pdf_path and os.path.exists(pdf_path):
+            self.content_text.setUrl(QUrl.fromLocalFile(pdf_path))
         else:
-            self.content_text.setHtml("<html><body style='color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;'>无内容</body></html>")
+            content = article.get('内容', '')
+            if content:
+                self.content_text.setHtml(content, QUrl("https://mp.weixin.qq.com"))
+            else:
+                self.content_text.setHtml(
+                    "<html><body style='color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;'>无内容</body></html>")
         
         # 滚动到顶部
         self.content_text.page().runJavaScript("window.scrollTo(0,0)")
@@ -827,6 +832,27 @@ class ArticlePreviewDialog(QDialog):
         # 检查是否有链接
         link = article.get('链接', '')
         self.open_link_btn.setEnabled(bool(link))
+
+    def _find_pdf(self, article) -> str:
+        """根据文章信息查找对应的本地 PDF 路径"""
+        from spider.wechat.pdf_generator import _sanitize_filename
+        account_name = article.get('公众号', '')
+        title = article.get('标题', '')
+        if not account_name or not title:
+            return ''
+
+        safe_account = _sanitize_filename(account_name)
+        safe_title = _sanitize_filename(title)
+        stem = f"{safe_account}_{safe_title}"
+
+        candidates = [
+            os.path.join(os.getcwd(), 'download', safe_account, f"{stem}.pdf"),
+            os.path.join(os.getcwd(), 'download', f"{stem}.pdf"),
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        return ''
     
     def _on_prev(self):
         """切换到上一篇文章"""
@@ -1370,3 +1396,58 @@ class HistoryTagsContainer(QWidget):
             self.empty_label.setVisible(True)
             self.tags_widget.setVisible(False)
             self.setVisible(False)
+
+
+class ProcessingIndicator(QWidget):
+    """右下角悬浮状态指示器"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(28)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 3, 10, 3)
+        layout.setSpacing(6)
+
+        self.dot = QLabel("●")
+        self.dot.setStyleSheet("font-size: 10px; color: #888;")
+        layout.addWidget(self.dot)
+
+        self.label = BodyLabel("等待中")
+        self.label.setStyleSheet("font-size: 11px; color: #aaa; background: transparent; border: none;")
+        layout.addWidget(self.label)
+
+        self.setStyleSheet(f"""
+            ProcessingIndicatorsssss {{
+                background-color: rgba(30, 30, 30, 0.92);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+            }}
+        """)
+        self._update_style()
+
+    def _update_style(self):
+        self.setStyleSheet(f"""
+            #{self.objectName()} {{
+                background-color: rgba(30, 30, 30, 0.92);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+            }}
+        """)
+
+    def set_idle(self, text="等待中"):
+        self.dot.setStyleSheet("font-size: 10px; color: #888;")
+        self.label.setText(text)
+
+    def set_processing(self, text):
+        self.dot.setStyleSheet("font-size: 10px; color: #07C160;")
+        self.label.setText(text)
+
+    def set_error(self, text):
+        self.dot.setStyleSheet("font-size: 10px; color: #FA5151;")
+        self.label.setText(text)
+
+    def set_success(self, text):
+        self.dot.setStyleSheet("font-size: 10px; color: #07C160;")
+        self.label.setText(text)

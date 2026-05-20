@@ -211,6 +211,18 @@ class MainWindow(FluentWindow):
         )
         self.settings_page = SettingsPage(self)
         
+        # 初始化后台守护线程
+        from .workers import BackgroundScrapeDaemon
+        self.daemon = BackgroundScrapeDaemon(self.login_page.get_login_manager())
+        self.daemon.log_message.connect(self._on_daemon_log)
+        self.daemon.account_status_changed.connect(self._on_account_daemon_status)
+        
+        # 全局状态指示器
+        from .widgets import ProcessingIndicator
+        self.processing_indicator = ProcessingIndicator(self)
+        self.processing_indicator.setObjectName("processingIndicator")
+        self.processing_indicator.show()
+        
         # 延迟应用标签透明背景，确保所有组件都已创建
         QTimer.singleShot(100, self._apply_label_transparency)
     
@@ -230,7 +242,7 @@ class MainWindow(FluentWindow):
             apply_label_transparent_background(page)
     
     def _connect_signals(self):
-        # 爬取完成信号
+        # 爬取完成信号（保留兼容，但后台模式可能不用）
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)
         # 数据放弃信号
         self.results_page.data_discarded.connect(self._on_data_discarded)
@@ -240,6 +252,23 @@ class MainWindow(FluentWindow):
     def _on_settings_changed(self, config: dict):
         """处理设置变更事件，将新配置同步到爬取页面"""
         self.scrape_page.apply_settings(config)
+
+    def _on_daemon_log(self, message: str, level: str):
+        """后台线程日志 → 转发到爬取页面的日志面板"""
+        self.scrape_page.append_log(message, level)
+
+    def _on_account_daemon_status(self, account_name: str, status: str, message: str):
+        """后台线程账号状态变更 → 刷新表格 + 更新全局指示器"""
+        self.scrape_page.on_account_status_changed(account_name, status, message)
+
+        if status == 'processing':
+            self.processing_indicator.set_processing(f"正在处理: {account_name}")
+        elif status == 'completed':
+            self.processing_indicator.set_success(f"完成: {account_name}")
+        elif status == 'error':
+            self.processing_indicator.set_error(f"失败: {account_name}")
+        else:
+            self.processing_indicator.set_idle()
     
     def _on_scrape_completed(self, articles: list, source_info: str):
         """处理爬取完成事件，加载结果数据并切换到结果页面"""
@@ -278,4 +307,17 @@ class MainWindow(FluentWindow):
         )
     
     def closeEvent(self, event: QCloseEvent):
+        """关闭时停止后台线程"""
+        if hasattr(self, 'daemon'):
+            self.daemon.stop()
+            self.daemon.wait(5000)
         event.accept()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'processing_indicator'):
+            bar_width = 280
+            bar_height = 28
+            x = self.width() - bar_width - 16
+            y = self.height() - bar_height - 12
+            self.processing_indicator.setGeometry(x, y, bar_width, bar_height)

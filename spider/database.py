@@ -45,6 +45,7 @@ class Database:
                 VALUES (new.id, new.title, new.content);
             END;
         """)
+        self.init_account_table()
         self.conn.commit()
 
     def save_articles(self, articles: List[Dict]) -> int:
@@ -107,6 +108,62 @@ class Database:
 
     def clear(self):
         self.conn.executescript("DELETE FROM articles; DELETE FROM articles_fts;")
+        self.conn.commit()
+
+    def init_account_table(self):
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS wechat_account (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                status TEXT DEFAULT 'pending',
+                error_message TEXT DEFAULT '',
+                total_articles INTEGER DEFAULT 0,
+                date_range TEXT DEFAULT '最近7天',
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                updated_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+        """)
+        self.conn.commit()
+
+    def add_account(self, name: str, date_range: str = '最近7天') -> bool:
+        try:
+            self.conn.execute(
+                "INSERT INTO wechat_account (name, date_range) VALUES (?, ?)",
+                (name, date_range)
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def delete_account(self, name: str) -> bool:
+        cursor = self.conn.execute("DELETE FROM wechat_account WHERE name = ?", (name,))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def get_pending_account(self) -> Optional[dict]:
+        row = self.conn.execute(
+            "SELECT id, name, date_range FROM wechat_account WHERE status = 'pending' ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_accounts(self, status: Optional[str] = None) -> List[Dict]:
+        if status:
+            rows = self.conn.execute(
+                "SELECT name, status, total_articles, date_range, created_at, error_message FROM wechat_account WHERE status = ? ORDER BY created_at DESC",
+                (status,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT name, status, total_articles, date_range, created_at, error_message FROM wechat_account ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_account_status(self, name: str, status: str, error_message: str = '', total_articles: int = 0):
+        self.conn.execute(
+            "UPDATE wechat_account SET status = ?, error_message = ?, total_articles = ?, updated_at = datetime('now','localtime') WHERE name = ?",
+            (status, error_message, total_articles, name)
+        )
         self.conn.commit()
 
     def close(self):

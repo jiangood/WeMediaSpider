@@ -11,11 +11,16 @@
     1. BatchScrapeWorker: 同步爬取工作线程
        - 使用 ThreadPoolExecutor 实现并发
        - 适用于简单的批量爬取场景
-    
+   
     2. AsyncBatchScrapeWorker: 异步爬取工作线程
        - 使用 aiohttp 实现高效并发
        - 适用于大量公众号的批量爬取
        - 性能更好，资源占用更低
+
+    3. BackgroundScrapeDaemon: 后台守护线程
+       - 持续轮询数据库中的待处理公众号
+       - 自动登录、爬取、生成 PDF
+       - 通过信号更新 GUI 状态和日志
 
 信号机制:
     两种工作线程都提供相同的信号接口，方便 GUI 层统一处理：
@@ -270,3 +275,146 @@ class AsyncBatchScrapeWorker(QThread):
             import traceback
             traceback.print_exc()
             self.scrape_failed.emit(f"异步爬取出错: {str(e)}")
+
+
+class BackgroundScrapeDaemon(QThread):
+
+    log_message = pyqtSignal(str, str)       # (message, level)
+    account_status_changed = pyqtSignal(str, str, str)  # (name, status, message)
+
+    def __init__(self, login_manager):
+        super().__init__()
+        self.login_manager = login_manager
+        self._is_running = True
+        self._current_account = None
+
+    def stop(self):
+        self._is_running = False
+        if self._current_account:
+            self._current_account.cancel_batch_scrape()
+
+    def run(self):
+        self.log_message.emit("后台线程已启动，等待登录...", "info")
+
+        while self._is_running:
+            # 等待登录就绪
+            if not self.login_manager.is_logged_in():
+                self.msleep(5000)
+                continue
+
+            token = self.login_manager.get_token()
+            headers = self.login_manager.get_headers()
+            if not token or not headers:
+                self.msleep(5000)
+                continue
+
+            try:
+                from spider.database import Database
+                from gui.utils import DB_PATH
+                db = Database(DB_PATH)
+                pending = db.get_pending_account()
+                db.close()
+            except Exception as e:
+                self.log_message.emit(f"查询数据库失败: {e}", "error")
+                self.msleep(30000)
+                continue
+
+            if not pending:
+                self.msleep(30000)
+                continue
+
+            account_name = pending['name']
+            date_range = pending.get('date_range', '最近7天')
+
+            self.log_message.emit(f"开始处理公众号: {account_name} (时间范围: {date_range})", "info")
+            self._process_account(account_name, date_range, token, headers)
+
+        self.log_message.emit("后台线程已停止", "info")
+
+    def _process_account(self, account_name: str, date_range: str, token: str, headers: dict):
+        from spider.database import Database
+        from spider.wechat.scraper import BatchWeChatScraper
+        from gui.utils import DB_PATH
+        from datetime import datetime, timedelta
+        import os
+
+        # 日期范围 → 起止日期
+        today = datetime.now()
+        if date_range == "最近7天":
+            start = today - timedelta(days=6)
+        elif date_range == "本月":
+            start = today.replace(day=1)
+        elif date_range == "本季度":
+            q = ((today.month - 1) // 3) * 3 + 1
+            start = today.replace(month=q, day=1)
+        elif date_range == "本年":
+            start = today.replace(month=1, day=1)
+        elif date_range == "最近3年":
+            start = today.replace(year=today.year - 3, month=1, day=1)
+        else:
+            start = today.replace(year=today.year - 10, month=1, day=1)
+
+        config = {
+            'accounts': [account_name],
+            'start_date': start.strftime("%Y-%m-%d"),
+            'end_date': today.strftime("%Y-%m-%d"),
+            'token': token,
+            'headers': headers,
+            'request_interval': 10,
+            'include_content': True,
+            'content_keyword_filter': '',
+            'db_path': DB_PATH,
+            'download_dir': os.path.join(os.getcwd(), 'download'),
+        }
+
+        scraper = BatchWeChatScraper()
+        scraper.set_callback('account_status', self._on_scraper_status)
+        scraper.set_callback('error_occurred', self._on_scraper_error)
+        scraper.set_callback('article_progress', self._on_article_progress)
+        scraper.set_callback('content_progress', self._on_content_progress)
+
+        try:
+            # 更新状态为 processing
+            db = Database(DB_PATH)
+            db.update_account_status(account_name, 'processing')
+            db.close()
+            self.account_status_changed.emit(account_name, 'processing', '')
+
+            self.log_message.emit(f"正在搜索公众号: {account_name}", "info")
+
+            articles = scraper.start_batch_scrape(config)
+
+            if not self._is_running:
+                return
+
+            total = len(articles)
+            db = Database(DB_PATH)
+            db.update_account_status(account_name, 'completed', total_articles=total)
+            db.close()
+            self.account_status_changed.emit(account_name, 'completed', '')
+
+            self.log_message.emit(f"完成！{account_name}: 共 {total} 篇文章", "success")
+
+        except Exception as e:
+            import traceback
+            error_msg = traceback.format_exc()
+            self.log_message.emit(f"处理失败 {account_name}: {e}", "error")
+
+            db = Database(DB_PATH)
+            db.update_account_status(account_name, 'error', error_message=str(e))
+            db.close()
+            self.account_status_changed.emit(account_name, 'error', str(e))
+
+    def _on_scraper_status(self, account_name, status, message):
+        self.account_status_changed.emit(account_name, status, message)
+        level = 'error' if status == 'error' else 'info'
+        self.log_message.emit(f"{account_name}: {message}", level)
+
+    def _on_scraper_error(self, account_name, error_message):
+        self.log_message.emit(f"{account_name} 出错: {error_message}", "error")
+
+    def _on_article_progress(self, count, message):
+        self.log_message.emit(message, "info")
+
+    def _on_content_progress(self, current, total, message):
+        self.log_message.emit(message, "info")

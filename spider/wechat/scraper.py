@@ -605,6 +605,18 @@ class BatchWeChatScraper:
                     # 获取内容
                     article = self.scraper.get_article_content_by_url(article)
                     
+                    # PDF generation during request interval
+                    self._trigger_account_status(account_name, "pdf_generating",
+                        f"正在生成PDF: {article.get('title', '')[:30]}")
+                    try:
+                        from spider.wechat.pdf_generator import generate_article_pdf
+                        generate_article_pdf(
+                            article, account_name,
+                            config.get('download_dir', './download/')
+                        )
+                    except Exception as pdf_err:
+                        logger.warning(f"PDF生成失败: {pdf_err}")
+                    
                     # 请求间延迟
                     if i < len(articles_in_range) - 1:
                         delay = random.uniform(1, config.get('request_interval', 60) / 10)
