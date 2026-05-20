@@ -75,12 +75,15 @@ class BackgroundScrapeDaemon(QThread):
         from spider.wechat.utils import get_fakid, get_articles_list, format_time, get_article_content
         from spider.wechat.scraper import WeChatScraper
 
+        db = Database(DB_PATH)
+
         while self.is_running:
             if not self.login_manager.is_logged_in():
                 self.phase_changed.emit('idle')
                 self._log("等待登录...")
                 for _ in range(60):
                     if not self.is_running:
+                        db.close()
                         return
                     self.msleep(1000)
                     if self.login_manager.is_logged_in():
@@ -95,8 +98,6 @@ class BackgroundScrapeDaemon(QThread):
                 self._log("登录凭证无效，等待重新登录", 'warning')
                 self.msleep(30000)
                 continue
-
-            db = Database(DB_PATH)
 
             try:
                 pending = db.get_pending_account()
@@ -209,8 +210,8 @@ class BackgroundScrapeDaemon(QThread):
             except Exception as e:
                 self._log(f"守护线程异常: {e}", 'error')
                 self.msleep(5000)
-            finally:
-                db.close()
+
+        db.close()
 
 
 class BatchScrapeWorker(QThread):

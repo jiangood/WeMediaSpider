@@ -503,7 +503,6 @@ class AsyncWeChatClient:
                     content_parts.append(f"\n![{alt}]({src})\n")
         
         return ''.join(content_parts) if content_parts else ""
-        return ""
     
     def _extract_image_article_content(self, soup) -> str:
         """
