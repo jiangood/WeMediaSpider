@@ -27,7 +27,6 @@ HTML 内容解析、数据格式转换等。这些函数被 scraper 模块调用
 技术说明:
     - 使用 requests 发送同步 HTTP 请求
     - 使用 BeautifulSoup + lxml 解析 HTML
-    - 使用 markdownify 将 HTML 转换为 Markdown
     - 内置请求频率控制，避免触发反爬机制
 """
 
@@ -40,64 +39,8 @@ from datetime import datetime
 
 from tqdm import tqdm
 import bs4
-from markdownify import MarkdownConverter
 
 from spider.log.utils import logger
-
-
-class ImageBlockConverter(MarkdownConverter):
-    """
-    自定义 Markdown 转换器
-    
-    继承 markdownify 的转换器，重写图片处理逻辑，
-    使图片在 Markdown 中独占一行，提升可读性。
-    
-    主要改动:
-        - 图片前后添加换行符
-        - 优先使用 data-src 属性（微信懒加载图片）
-    """
-    
-    def convert_img(self, el, text, parent_tags):
-        """
-        转换 img 标签为 Markdown 图片语法
-        
-        Args:
-            el: BeautifulSoup 的 img 元素
-            text: 元素的文本内容（图片通常为空）
-            parent_tags: 父级标签集合
-        
-        Returns:
-            str: Markdown 格式的图片文本，如 ![alt](src)
-        """
-        alt = el.attrs.get('alt', None) or ''
-        src = el.attrs.get('src', None) or ''
-        if not src:
-            src = el.attrs.get('data-src', None) or ''
-        title = el.attrs.get('title', None) or ''
-        title_part = ' "%s"' % title.replace('"', r'\"') if title else ''
-        if ('_inline' in parent_tags
-                and el.parent.name not in self.options['keep_inline_images_in']):
-            return alt
-
-        return '\n![%s](%s%s)\n' % (alt, src, title_part)
-
-
-def md(soup, **options):
-    """
-    将 BeautifulSoup 对象转换为 Markdown 文本
-    
-    这是 ImageBlockConverter 的便捷调用方法。
-    
-    Args:
-        soup: BeautifulSoup 对象或元素
-        **options: 传递给转换器的选项
-    
-    Returns:
-        str: 转换后的 Markdown 文本
-    """
-    return ImageBlockConverter(**options).convert_soup(soup)
-
-
 def get_fakid(headers, tok, query):
     """
     搜索公众号并获取 fakeid
@@ -244,46 +187,27 @@ def _preprocess_lazy_images(soup):
             logger.debug(f"替换懒加载图片: {data_src[:50]}...")
 
 
+def _md_to_html(text):
+    """将简化的markdown格式（标题+图片）转为HTML"""
+    if not text:
+        return text
+    import re
+    text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1">', text)
+    text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+    text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    parts = []
+    for line in lines:
+        if not line.startswith('<'):
+            parts.append(f'<p>{line}</p>')
+        else:
+            parts.append(line)
+    return '\n'.join(parts)
+
+
 def _extract_fallback_content(soup, content_ele):
-    """
-    备用内容提取方法
-    
-    当标准的 Markdown 转换失败或结果不理想时使用。
-    采用更简单直接的方式提取文本和图片，确保不会丢失内容。
-    
-    Args:
-        soup: 完整页面的 BeautifulSoup 对象
-        content_ele: 文章内容区域的元素
-    
-    Returns:
-        str: 提取的内容，Markdown 格式
-    """
-    content_parts = []
-    
-    # 1. 提取标题
-    title_ele = soup.select_one('.rich_media_title, #activity-name, h1')
-    if title_ele and title_ele.get_text(strip=True):
-        content_parts.append(f"# {title_ele.get_text(strip=True)}\n")
-    
-    # 2. 提取文本内容
-    if content_ele:
-        text_content = content_ele.get_text(separator='\n', strip=True)
-        if text_content:
-            content_parts.append(f"\n{text_content}\n")
-    
-    # 3. 提取所有图片
-    if content_ele:
-        images = content_ele.find_all('img')
-        if images:
-            content_parts.append("\n## 图片\n")
-            for i, img in enumerate(images, 1):
-                src = img.get('src') or img.get('data-src') or ''
-                alt = img.get('alt') or f'图片{i}'
-                # 过滤掉占位符图片
-                if src and 'mmbiz.qpic.cn' in src and 'data:image' not in src:
-                    content_parts.append(f"\n![{alt}]({src})\n")
-    
-    return ''.join(content_parts) if content_parts else None
+    """备用内容提取方法，返回内容元素HTML"""
+    return str(content_ele) if content_ele else None
 
 
 def get_article_content(url, headers, max_retries=3, retry_delay=2):
@@ -382,7 +306,7 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
                 logger.info(f"检测到图片类型文章（page_share_img={is_image_article}, swiper={has_swiper}），使用特殊处理")
                 content = _extract_image_article_content(soup)
                 if content and len(content.strip()) >= MIN_CONTENT_LENGTH:
-                    return content
+                    return _md_to_html(content)
             
             # 尝试多个选择器
             content_ele = None
@@ -396,13 +320,12 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
             
             content = ""
             if content_ele:
-                # 将HTML转换为Markdown
-                content = md(content_ele[0], keep_inline_images_in=["section", "span"])
+                content = str(content_ele[0])
                 
                 # 验证内容是否有效（去除空白后长度大于阈值）
                 content_stripped = content.strip()
                 if len(content_stripped) < MIN_CONTENT_LENGTH:
-                    logger.warning(f"Markdown转换后内容过短({len(content_stripped)}字符)，尝试备用提取方法")
+                    logger.warning(f"HTML内容过短({len(content_stripped)}字符)，尝试备用提取方法")
                     fallback_content = _extract_fallback_content(soup, content_ele[0])
                     if fallback_content and len(fallback_content.strip()) > len(content_stripped):
                         content = fallback_content
@@ -447,26 +370,7 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
 
 
 def _extract_all_text_content(soup):
-    """
-    最后的兜底方法：提取页面所有可见文本
-    
-    当其他所有提取方法都失败时使用。会尝试获取标题、
-    正文文本和图片，确保不会返回完全空的内容。
-    
-    Args:
-        soup: BeautifulSoup 对象
-    
-    Returns:
-        str: 提取的文本内容，Markdown 格式
-    """
-    content_parts = []
-    
-    # 尝试获取标题
-    title_ele = soup.select_one('.rich_media_title, #activity-name, h1')
-    if title_ele and title_ele.get_text(strip=True):
-        content_parts.append(f"# {title_ele.get_text(strip=True)}\n")
-    
-    # 尝试获取主要内容区域的文本
+    """最后的兜底方法：提取页面主要内容的HTML"""
     main_content_selectors = [
         '.rich_media_content',
         '#js_content',
@@ -478,22 +382,11 @@ def _extract_all_text_content(soup):
     for selector in main_content_selectors:
         ele = soup.select_one(selector)
         if ele:
-            text = ele.get_text(separator='\n', strip=True)
-            if text and len(text) > 20:
-                content_parts.append(f"\n{text}\n")
-                break
+            html = str(ele)
+            if len(html.strip()) > 50:
+                return html
     
-    # 提取所有图片
-    images = soup.select('img[data-src], img[src*="mmbiz.qpic.cn"]')
-    if images:
-        content_parts.append("\n## 图片\n")
-        for i, img in enumerate(images[:20], 1):  # 限制最多20张图片
-            src = img.get('data-src') or img.get('src') or ''
-            if src and 'mmbiz.qpic.cn' in src and 'data:image' not in src:
-                alt = img.get('alt') or f'图片{i}'
-                content_parts.append(f"\n![{alt}]({src})\n")
-    
-    return ''.join(content_parts) if content_parts else ""
+    return ""
 
 
 def _decode_html_entities(text):

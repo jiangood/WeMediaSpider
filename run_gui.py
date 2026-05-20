@@ -86,7 +86,6 @@ def check_basic_dependencies():
         ('requests', 'requests'),
         ('loguru', 'loguru'),
         ('bs4', 'beautifulsoup4'),
-        ('markdownify', 'markdownify'),
         ('tqdm', 'tqdm'),
         ('lxml', 'lxml'),
     ]

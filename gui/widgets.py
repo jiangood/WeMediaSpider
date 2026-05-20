@@ -42,10 +42,11 @@ import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
-    QDialog, QLabel, QScrollArea, QApplication, QFrame, QTextBrowser
+    QDialog, QLabel, QApplication, QFrame
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QUrl, QSize, QTimer
 from PyQt6.QtGui import QDesktopServices, QKeyEvent, QCursor
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from qfluentwidgets import (
     CardWidget as FluentCard, PrimaryPushButton, PushButton,
@@ -713,50 +714,20 @@ class ArticlePreviewDialog(QDialog):
         
         layout.addWidget(info_card)
         
-        # 内容区域
+        # 内容区域（WebView渲染HTML，自带滚动）
         content_card = FluentCard()
         content_layout = QVBoxLayout(content_card)
         content_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 使用滚动区域包装内容
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet(f"""
-            QScrollArea {{
-                border: none;
-                background-color: transparent;
-            }}
-            QScrollBar:vertical {{
-                background-color: {COLORS['surface']};
-                width: 10px;
-                border-radius: 5px;
-            }}
-            QScrollBar::handle:vertical {{
-                background-color: {COLORS['border']};
-                border-radius: 5px;
-                min-height: 30px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background-color: {COLORS['primary']};
-            }}
-        """)
-        
-        # 内容文本框（支持 HTML 渲染）
-        self.content_text = QTextBrowser()
-        self.content_text.setOpenExternalLinks(True)
+        self.content_text = QWebEngineView()
         self.content_text.setStyleSheet(f"""
-            QTextBrowser {{
+            QWebEngineView {{
                 background-color: {COLORS['surface']};
-                color: {COLORS['text']};
                 border: none;
-                padding: 20px;
-                font-size: 15px;
-                line-height: 1.8;
             }}
         """)
         
-        scroll_area.setWidget(self.content_text)
-        content_layout.addWidget(scroll_area)
+        content_layout.addWidget(self.content_text)
         
         layout.addWidget(content_card, 1)  # 内容区域占据剩余空间
         
@@ -836,16 +807,15 @@ class ArticlePreviewDialog(QDialog):
         pub_time = article.get('发布时间', '-')
         self.time_label.setText(f"📅 发布时间: {pub_time}")
         
-        # 更新内容（Markdown 转 HTML）
+        # 更新内容（WebView渲染HTML）
         content = article.get('内容', '')
         if content:
-            html = self._markdown_to_html(content)
-            self.content_text.setHtml(html)
+            self.content_text.setHtml(content, QUrl("https://mp.weixin.qq.com"))
         else:
-            self.content_text.setHtml("<p style='color: #999; text-align: center; padding: 40px;'>无内容</p>")
+            self.content_text.setHtml("<html><body style='color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;'>无内容</body></html>")
         
         # 滚动到顶部
-        self.content_text.verticalScrollBar().setValue(0)
+        self.content_text.page().runJavaScript("window.scrollTo(0,0)")
         
         # 更新计数
         self.count_label.setText(f"{self.current_index + 1} / {len(self.articles)}")
@@ -891,29 +861,13 @@ class ArticlePreviewDialog(QDialog):
             self.current_index = index
             self._update_display()
 
-    def _markdown_to_html(self, md_text):
-        if not md_text:
-            return ''
-
-        try:
-            import markdown
-            return markdown.markdown(md_text, extensions=['tables', 'fenced_code'])
-        except ImportError:
-            html = (str(md_text)
-                    .replace('&', '&amp;')
-                    .replace('<', '&lt;')
-                    .replace('>', '&gt;'))
-            html = html.replace('\n\n', '</p><p>')
-            html = html.replace('\n', '<br>')
-            html = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1" style="max-width:100%;">', html)
-            html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
-            return f'<p>{html}</p>'
-
 
 class ImageExtractDialog(QDialog):
-    def __init__(self, article_url, parent=None):
+    def __init__(self, article_url, generate_pdf=True, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("提取图片")
+        self.generate_pdf = generate_pdf
+        title_text = "导出PDF" if generate_pdf else "下载图片"
+        self.setWindowTitle(title_text)
         self.setModal(True)
         self.resize(560, 420)
         self.worker = None
@@ -925,11 +879,11 @@ class ImageExtractDialog(QDialog):
             sg = screen.availableGeometry()
             self.move((sg.width() - 560) // 2, (sg.height() - 420) // 2)
 
-        self._setup_ui()
+        self._setup_ui(title_text)
         self.url_input.setText(article_url)
         QTimer.singleShot(100, self._on_start_extract)
 
-    def _setup_ui(self):
+    def _setup_ui(self, title_text):
         self.setStyleSheet(f"""
             QDialog {{ background-color: {COLORS['background']}; }}
         """)
@@ -937,7 +891,7 @@ class ImageExtractDialog(QDialog):
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(10)
 
-        title = TitleLabel("提取图片")
+        title = TitleLabel(title_text)
         layout.addWidget(title)
 
         url_row = QHBoxLayout()
@@ -953,7 +907,7 @@ class ImageExtractDialog(QDialog):
         info_label = BodyLabel("文章标题:")
         info_label.setFixedWidth(65)
         info_row.addWidget(info_label)
-        self.article_title_label = BodyLabel("等待提取...")
+        self.article_title_label = BodyLabel("等待下载...")
         self.article_title_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
         info_row.addWidget(self.article_title_label, 1)
         layout.addLayout(info_row)
@@ -972,7 +926,7 @@ class ImageExtractDialog(QDialog):
 
         self.image_list_text = TextEdit()
         self.image_list_text.setReadOnly(True)
-        self.image_list_text.setPlaceholderText("提取的图片链接将显示在这里...")
+        self.image_list_text.setPlaceholderText("下载的图片链接将显示在这里...")
         self.image_list_text.setStyleSheet(f"""
             TextEdit {{
                 background-color: {COLORS['surface']};
@@ -1013,28 +967,30 @@ class ImageExtractDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _on_start_extract(self):
-        from gui.pages.article_image_page import ImageExtractWorker
+        from gui.pages.article_downloader import ImageExtractWorker
         from gui.utils import DEFAULT_OUTPUT_DIR
         import os
 
         url = self.url_input.text().strip()
+        print(f"[ImageExtractDialog] _on_start_extract: url={url}")
         if not url:
             return
 
         output_dir = DEFAULT_OUTPUT_DIR
+        print(f"[ImageExtractDialog] output_dir={output_dir}")
         os.makedirs(output_dir, exist_ok=True)
 
         self._image_urls = []
-        self.article_title_label.setText("提取中...")
+        self.article_title_label.setText("下载中...")
         self.image_list_text.clear()
         self.image_count_label.setText("0")
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.cancel_btn.show()
         self.open_folder_btn.hide()
-        self.status_label.setText("正在提取...")
+        self.status_label.setText("正在下载...")
 
-        self.worker = ImageExtractWorker(url=url, output_dir=output_dir, save_images=True)
+        self.worker = ImageExtractWorker(url=url, output_dir=output_dir, save_images=True, generate_pdf=self.generate_pdf)
         self.worker.progress_update.connect(self._on_progress_update)
         self.worker.image_found.connect(self._on_image_found)
         self.worker.extract_success.connect(self._on_extract_success)
@@ -1078,14 +1034,15 @@ class ImageExtractDialog(QDialog):
         self.cancel_btn.hide()
         self.progress_bar.setValue(100)
 
-        InfoBar.success(title="提取成功", content=f"共提取 {len(images)} 张图片", parent=self, position=InfoBarPosition.TOP, duration=3000)
+        InfoBar.success(title="下载完成", content=f"共提取 {len(images)} 张图片", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
     def _on_extract_failed(self, error_msg):
+        print(f"[ImageExtractDialog] _on_extract_failed: {error_msg}")
         self.cancel_btn.hide()
         self.progress_bar.hide()
         self.status_label.setText(f"失败: {error_msg}")
         self.status_label.setStyleSheet(f"color: {COLORS['error']};")
-        InfoBar.error(title="提取失败", content=error_msg, parent=self, position=InfoBarPosition.TOP, duration=5000)
+        InfoBar.error(title="下载失败", content=error_msg, parent=self, position=InfoBarPosition.TOP, duration=5000)
 
     def _on_download_complete(self, folder_path):
         self._output_folder = folder_path

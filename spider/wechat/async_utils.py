@@ -32,38 +32,13 @@
 import aiohttp
 import asyncio
 import random
+import re
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
 import bs4
-from markdownify import MarkdownConverter
 
 from spider.log.utils import logger
-
-
-class ImageBlockConverter(MarkdownConverter):
-    """
-    自定义 Markdown 转换器
-    
-    重写图片转换逻辑，优先使用 data-src 属性，
-    并在图片前后添加换行以提升可读性。
-    """
-    def convert_img(self, el, text, parent_tags):
-        alt = el.attrs.get('alt', None) or ''
-        src = el.attrs.get('src', None) or ''
-        if not src:
-            src = el.attrs.get('data-src', None) or ''
-        title = el.attrs.get('title', None) or ''
-        title_part = ' "%s"' % title.replace('"', r'\"') if title else ''
-        if ('_inline' in parent_tags
-                and el.parent.name not in self.options['keep_inline_images_in']):
-            return alt
-        return '\n![%s](%s%s)\n' % (alt, src, title_part)
-
-
-def md(soup, **options):
-    """将BeautifulSoup对象转换为Markdown"""
-    return ImageBlockConverter(**options).convert_soup(soup)
 
 
 def _preprocess_lazy_images(soup):
@@ -119,45 +94,24 @@ def _decode_html_entities(text):
 
 
 def _extract_fallback_content(soup, content_ele):
-    """
-    备用内容提取方法，当Markdown转换失败时使用
-    
-    Args:
-        soup: BeautifulSoup对象
-        content_ele: 内容元素
-        
-    Returns:
-        str: 提取的内容（Markdown格式）
-    """
-    content_parts = []
-    
-    # 1. 提取标题
-    title_ele = soup.select_one('.rich_media_title, #activity-name, h1')
-    if title_ele and title_ele.get_text(strip=True):
-        title_text = _decode_html_entities(title_ele.get_text(strip=True))
-        content_parts.append(f"# {title_text}\n")
-    
-    # 2. 提取文本内容
-    if content_ele:
-        text_content = content_ele.get_text(separator='\n', strip=True)
-        if text_content:
-            text_content = _decode_html_entities(text_content)
-            content_parts.append(f"\n{text_content}\n")
-    
-    # 3. 提取所有图片
-    if content_ele:
-        images = content_ele.find_all('img')
-        if images:
-            content_parts.append("\n## 图片\n")
-            for i, img in enumerate(images, 1):
-                src = img.get('src') or img.get('data-src') or ''
-                alt = img.get('alt') or f'图片{i}'
-                # 过滤掉占位符图片
-                if src and 'mmbiz.qpic.cn' in src and 'data:image' not in src:
-                    src = _decode_html_entities(src)
-                    content_parts.append(f"\n![{alt}]({src})\n")
-    
-    return ''.join(content_parts) if content_parts else None
+    return str(content_ele) if content_ele else None
+
+
+def _md_to_html(text):
+    """将简化的markdown格式（标题+图片）转为HTML"""
+    if not text:
+        return text
+    text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1">', text)
+    text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+    text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    parts = []
+    for line in lines:
+        if not line.startswith('<'):
+            parts.append(f'<p>{line}</p>')
+        else:
+            parts.append(line)
+    return '\n'.join(parts)
 
 
 def format_time(timestamp: int) -> str:
@@ -431,7 +385,7 @@ class AsyncWeChatClient:
                         
                         if is_image_article or has_swiper:
                             logger.info(f"检测到图片类型文章（page_share_img={is_image_article}, swiper={has_swiper}），使用特殊处理")
-                            content = self._extract_image_article_content(soup)
+                            content = _md_to_html(self._extract_image_article_content(soup))
                             if content and len(content.strip()) >= MIN_CONTENT_LENGTH:
                                 await self._delay()
                                 return content
@@ -448,12 +402,12 @@ class AsyncWeChatClient:
                         
                         content = ""
                         if content_ele:
-                            content = md(content_ele[0], keep_inline_images_in=["section", "span"])
+                            content = str(content_ele[0])
                             
                             # 验证内容是否有效（去除空白后长度大于阈值）
                             content_stripped = content.strip()
                             if len(content_stripped) < MIN_CONTENT_LENGTH:
-                                logger.warning(f"Markdown转换后内容过短({len(content_stripped)}字符)，尝试备用提取方法")
+                                logger.warning(f"HTML内容过短({len(content_stripped)}字符)，尝试备用提取方法")
                                 fallback_content = _extract_fallback_content(soup, content_ele[0])
                                 if fallback_content and len(fallback_content.strip()) > len(content_stripped):
                                     content = fallback_content
@@ -502,22 +456,14 @@ class AsyncWeChatClient:
     
     def _extract_all_text_content(self, soup) -> str:
         """
-        最后的备用方法：提取页面所有可见文本内容
+        最后的备用方法：提取页面主要内容的HTML
         
         Args:
             soup: BeautifulSoup对象
             
         Returns:
-            str: 提取的文本内容
+            str: 提取的内容（HTML格式）
         """
-        content_parts = []
-        
-        # 尝试获取标题
-        title_ele = soup.select_one('.rich_media_title, #activity-name, h1')
-        if title_ele and title_ele.get_text(strip=True):
-            content_parts.append(f"# {title_ele.get_text(strip=True)}\n")
-        
-        # 尝试获取主要内容区域的文本
         main_content_selectors = [
             '.rich_media_content',
             '#js_content',
@@ -529,22 +475,11 @@ class AsyncWeChatClient:
         for selector in main_content_selectors:
             ele = soup.select_one(selector)
             if ele:
-                text = ele.get_text(separator='\n', strip=True)
-                if text and len(text) > 20:
-                    content_parts.append(f"\n{text}\n")
-                    break
+                html = str(ele)
+                if len(html.strip()) > 50:
+                    return html
         
-        # 提取所有图片
-        images = soup.select('img[data-src], img[src*="mmbiz.qpic.cn"]')
-        if images:
-            content_parts.append("\n## 图片\n")
-            for i, img in enumerate(images[:20], 1):  # 限制最多20张图片
-                src = img.get('data-src') or img.get('src') or ''
-                if src and 'mmbiz.qpic.cn' in src and 'data:image' not in src:
-                    alt = img.get('alt') or f'图片{i}'
-                    content_parts.append(f"\n![{alt}]({src})\n")
-        
-        return ''.join(content_parts) if content_parts else ""
+        return ""
     
     def _extract_image_article_content(self, soup) -> str:
         """

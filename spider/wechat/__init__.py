@@ -26,7 +26,6 @@
     - Requests: 同步 HTTP 请求
     - aiohttp: 异步 HTTP 请求，提升并发性能
     - BeautifulSoup + lxml: HTML 解析
-    - markdownify: HTML 转 Markdown
 
 使用示例:
     # 基础用法

@@ -87,20 +87,12 @@ class ImageExtractWorker(QThread):
     download_progress = pyqtSignal(int, int, str)
     download_complete = pyqtSignal(str)
     
-    def __init__(self, url: str, output_dir: str, save_images: bool = True, parent=None):
-        """
-        初始化工作线程
-        
-        Args:
-            url: 文章链接
-            output_dir: 输出目录
-            save_images: 是否下载图片到本地
-            parent: 父对象
-        """
+    def __init__(self, url: str, output_dir: str, save_images: bool = True, generate_pdf: bool = True, parent=None):
         super().__init__(parent)
         self.url = url
         self.output_dir = output_dir
         self.save_images = save_images
+        self.generate_pdf = generate_pdf
         self._is_cancelled = False
         
         # HTTP 请求头，模拟浏览器访问
@@ -119,86 +111,92 @@ class ImageExtractWorker(QThread):
         self._is_cancelled = True
     
     def run(self):
-        """
-        执行图片提取任务
-        
-        这是线程的主入口，按顺序执行：
-        获取页面 -> 解析内容 -> 提取图片 -> 生成文档 -> 下载图片
-        """
         try:
+            print(f"[DEBUG] run: start, url={self.url}")
+
             self.progress_update.emit(0, 100, "正在获取文章页面...")
-            
+
             # 获取页面内容
+            print(f"[DEBUG] run: fetching page...")
             response = requests.get(self.url, headers=self.headers, timeout=30)
+            print(f"[DEBUG] run: status={response.status_code}")
             if response.status_code != 200:
                 self.extract_failed.emit(f"请求失败，状态码: {response.status_code}")
                 return
-            
+
             if self._is_cancelled:
                 return
-            
+
             self.progress_update.emit(20, 100, "正在解析页面内容...")
-            
-            # 解析HTML
+
+            print(f"[DEBUG] run: parsing html...")
             soup = bs4.BeautifulSoup(response.text, 'lxml')
-            
+
             # 提取标题
             title = self._extract_title(soup)
             if not title:
                 title = f"文章_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
-            # 清理标题中的非法字符
+            print(f"[DEBUG] run: title={title}")
+
             safe_title = self._sanitize_filename(title)
-            
+
             if self._is_cancelled:
                 return
-            
+
             self.progress_update.emit(40, 100, "正在提取图片链接...")
-            
+
             # 提取图片
+            print(f"[DEBUG] run: extracting images...")
             images = self._extract_images(soup)
-            
+            print(f"[DEBUG] run: images count={len(images)}")
+
+            # 提取正文HTML
+            content_html = self._extract_content_html(soup)
+
             if not images:
                 self.extract_failed.emit("未找到任何图片")
                 return
-            
-            # 发送每张图片的信息
+
             for i, (url, alt) in enumerate(images):
                 self.image_found.emit(i + 1, url, alt)
-            
+
             if self._is_cancelled:
                 return
-            
-            self.progress_update.emit(60, 100, "正在生成Markdown文档...")
-            
-            # 生成Markdown内容
-            md_content = self._generate_markdown(title, images)
-            
-            # 创建输出目录
+
+            self.progress_update.emit(60, 100, "正在下载图片...")
+
             output_folder = os.path.join(self.output_dir, safe_title)
+            print(f"[DEBUG] run: output_folder={output_folder}")
             os.makedirs(output_folder, exist_ok=True)
-            
-            # 保存Markdown文件
-            md_file = os.path.join(output_folder, f"{safe_title}.md")
-            with open(md_file, 'w', encoding='utf-8') as f:
-                f.write(md_content)
-            
-            if self._is_cancelled:
-                return
-            
-            # 下载图片
+
             if self.save_images:
-                self.progress_update.emit(70, 100, "正在下载图片...")
+                print(f"[DEBUG] run: downloading images...")
                 self._download_images(images, output_folder)
-            
+                print(f"[DEBUG] run: download done")
+
             if self._is_cancelled:
                 return
-            
+
+            if self.generate_pdf:
+                self.progress_update.emit(80, 100, "正在生成PDF文档...")
+                print(f"[DEBUG] run: generating pdf...")
+                pdf_path = os.path.join(output_folder, f"{safe_title}.pdf")
+                self._generate_pdf(pdf_path, title, content_html, images, output_folder)
+                print(f"[DEBUG] run: pdf done, path={pdf_path}")
+            else:
+                self.progress_update.emit(80, 100, "下载完成")
+
+            if self._is_cancelled:
+                return
+
             self.progress_update.emit(100, 100, "完成！")
-            self.extract_success.emit(title, images, md_content)
+            self.extract_success.emit(title, images, '')
             self.download_complete.emit(output_folder)
-            
+
         except Exception as e:
+            import traceback
+            print(f"[DEBUG] run EXCEPTION: {e}")
+            traceback.print_exc()
             self.extract_failed.emit(f"提取失败: {str(e)}")
     
     def _extract_title(self, soup) -> str:
@@ -229,7 +227,20 @@ class ImageExtractWorker(QThread):
                     return title
         
         return ""
-    
+
+    def _extract_content_html(self, soup) -> str:
+        content_selectors = ['#js_content', '.rich_media_content']
+        for selector in content_selectors:
+            ele = soup.select_one(selector)
+            if ele:
+                for tag in ele.find_all(['script', 'style']):
+                    tag.decompose()
+                result = str(ele)
+                print(f"[DEBUG] _extract_content_html: selector={selector}, len={len(result)}")
+                return result
+        print("[DEBUG] _extract_content_html: no content found")
+        return ""
+
     def _extract_images(self, soup) -> list:
         """
         提取所有图片链接
@@ -780,71 +791,95 @@ class ImageExtractWorker(QThread):
         
         return images
     
-    def _generate_markdown(self, title: str, images: list) -> str:
-        """
-        生成 Markdown 文档
-        
-        创建包含文章信息和图片列表的 Markdown 文件。
-        
-        Args:
-            title: 文章标题
-            images: 图片列表 [(url, alt), ...]
-            
-        Returns:
-            str: Markdown 文档内容
-        """
-        lines = [
-            f"# {title}",
-            "",
-            f"> 提取时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"> 图片数量: {len(images)}",
-            "",
-            "## 图片列表",
-            ""
-        ]
-        
+    def _generate_pdf(self, pdf_path: str, title: str, content_html: str, images: list, image_folder: str):
+        # 替换图片URL为本地路径
+        import re as _re
+
+        def img_key(url):
+            if not url:
+                return ''
+            url = url.replace('http://', 'https://')
+            url = url.split('?')[0].split('#')[0].rstrip('/')
+            return url
+
+        url_to_local = {}
         for i, (url, alt) in enumerate(images, 1):
-            # 本地图片引用
+            norm = img_key(url)
             ext = self._get_image_extension(url)
-            local_name = f"{i}{ext}"
-            lines.append(f"### 图片 {i}")
-            lines.append("")
-            lines.append(f"![{alt}]({local_name})")
-            lines.append("")
-            lines.append(f"原始链接: {url}")
-            lines.append("")
-        
-        return '\n'.join(lines)
+            local = os.path.join(image_folder, f"{i}{ext}")
+            if not os.path.exists(local):
+                local = os.path.join(image_folder, f"{i}.png")
+            if os.path.exists(local):
+                url_to_local[norm] = local.replace('\\', '/')
+
+        def replace_img(m):
+            src = m.group(1) or m.group(2) or ''
+            norm = img_key(src)
+            local = url_to_local.get(norm)
+            if local:
+                return f'<img src="file:///{local}" style="max-width:100%;">'
+            return m.group(0)
+
+        html = content_html
+        html = _re.sub(r'<img[^>]*src=["\']([^"\']+)["\'][^>]*data-src=["\']([^"\']+)["\'][^>]*>', replace_img, html)
+        html = _re.sub(r'<img[^>]*src=["\']([^"\']+)["\'][^>]*>', replace_img, html)
+        html = _re.sub(r'<img[^>]*data-src=["\']([^"\']+)["\'][^>]*>', replace_img, html)
+
+        full_html = f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif; padding: 20px; line-height: 1.8; }}
+h1 {{ font-size: 22px; text-align: center; }}
+img {{ max-width: 100%; height: auto; }}
+p {{ margin: 8px 0; }}
+</style></head><body>
+<h1>{title}</h1>
+{html}
+</body></html>'''
+
+        from PyQt6.QtGui import QTextDocument, QPageSize, QPageLayout
+        from PyQt6.QtCore import QMarginsF
+        from PyQt6.QtPrintSupport import QPrinter
+
+        doc = QTextDocument()
+        doc.setHtml(full_html)
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(pdf_path)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        printer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout.Unit.Millimeter)
+
+        doc.print(printer)
     
     def _download_images(self, images: list, output_folder: str):
-        """
-        下载所有图片到本地
-        
-        按序号命名图片文件（1.jpg, 2.png, ...）。
-        
-        Args:
-            images: 图片列表 [(url, alt), ...]
-            output_folder: 输出文件夹路径
-        """
         total = len(images)
-        
+
         for i, (url, alt) in enumerate(images):
             if self._is_cancelled:
                 return
-            
+
             self.download_progress.emit(i + 1, total, f"下载图片 {i + 1}/{total}")
-            
+
             try:
-                # 获取图片扩展名
                 ext = self._get_image_extension(url)
                 filename = f"{i + 1}{ext}"
                 filepath = os.path.join(output_folder, filename)
-                
-                # 下载图片
+
                 response = requests.get(url, headers=self.headers, timeout=30)
                 if response.status_code == 200:
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
+                    raw_bytes = response.content
+                    # webp转png，兼容Word
+                    if ext == '.webp':
+                        from io import BytesIO
+                        from PIL import Image
+                        img = Image.open(BytesIO(raw_bytes)).convert('RGB')
+                        filename = f"{i + 1}.png"
+                        filepath = os.path.join(output_folder, filename)
+                        img.save(filepath, 'PNG')
+                    else:
+                        with open(filepath, 'wb') as f:
+                            f.write(raw_bytes)
             except Exception as e:
                 print(f"下载图片失败: {url}, 错误: {e}")
     

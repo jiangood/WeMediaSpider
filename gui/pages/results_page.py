@@ -213,7 +213,7 @@ class ResultsPage(ScrollArea):
         self.data_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.setColumnWidth(2, 200)
-        self.data_table.setColumnWidth(4, 130)
+        self.data_table.setColumnWidth(4, 180)
         self.data_table.itemSelectionChanged.connect(self._on_selection_changed)
         self.data_table.doubleClicked.connect(self._on_table_double_clicked)
         self.data_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -290,13 +290,17 @@ class ResultsPage(ScrollArea):
             btn_layout.setContentsMargins(2, 2, 2, 2)
             btn_layout.setSpacing(4)
             view_btn = PushButton("查看")
-            view_btn.setFixedSize(50, 26)
+            view_btn.setFixedSize(40, 26)
             view_btn.clicked.connect(lambda checked, row=i: self._preview_article_at_row(row))
             btn_layout.addWidget(view_btn)
             if link:
-                img_btn = PushButton("下载")
-                img_btn.setFixedSize(50, 26)
-                img_btn.clicked.connect(lambda checked, url=link: self._on_extract_images(url))
+                pdf_btn = PushButton("导出PDF")
+                pdf_btn.setFixedSize(60, 26)
+                pdf_btn.clicked.connect(lambda checked, url=link: self._on_export_pdf(url))
+                btn_layout.addWidget(pdf_btn)
+                img_btn = PushButton("下载图片")
+                img_btn.setFixedSize(70, 26)
+                img_btn.clicked.connect(lambda checked, url=link: self._on_download_images(url))
                 btn_layout.addWidget(img_btn)
             self.data_table.setCellWidget(i, 4, container)
         self.count_label.setText(f"共 {len(articles)} 条记录")
@@ -481,8 +485,12 @@ class ResultsPage(ScrollArea):
         self.data_table.selectRow(row)
         self._on_fullscreen_preview()
 
-    def _on_extract_images(self, link):
-        dialog = ImageExtractDialog(link, self.window())
+    def _on_export_pdf(self, link):
+        dialog = ImageExtractDialog(link, generate_pdf=True, parent=self.window())
+        dialog.exec()
+
+    def _on_download_images(self, link):
+        dialog = ImageExtractDialog(link, generate_pdf=False, parent=self.window())
         dialog.exec()
 
     def _on_export_all(self):
@@ -654,7 +662,7 @@ class ResultsPage(ScrollArea):
                 'account': self._escape_html(article.get('公众号', '未知')),
                 'pub_time': self._escape_html(article.get('发布时间', '未知')),
                 'link': article.get('链接', ''),
-                'content': self._markdown_to_html(article.get('内容', ''))
+                'content': article.get('内容', '')
             })
 
         articles_data = json.dumps(articles_json, ensure_ascii=False)
@@ -1004,21 +1012,6 @@ class ResultsPage(ScrollArea):
                 .replace('>', '&gt;')
                 .replace('"', '&quot;')
                 .replace("'", '&#39;'))
-
-    def _markdown_to_html(self, md_text):
-        if not md_text:
-            return ''
-
-        try:
-            import markdown
-            return markdown.markdown(md_text, extensions=['tables', 'fenced_code'])
-        except ImportError:
-            html = self._escape_html(md_text)
-            html = html.replace('\n\n', '</p><p>')
-            html = html.replace('\n', '<br>')
-            html = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1">', html)
-            html = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', html)
-            return f'<p>{html}</p>'
 
     def _on_discard_data(self):
         if not self.articles:
