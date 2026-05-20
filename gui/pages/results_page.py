@@ -183,6 +183,11 @@ class ResultsPage(ScrollArea):
         self.search_input.setMaximumWidth(280)
         row1.addWidget(self.search_input)
 
+        self.query_btn = PushButton("查询")
+        self.query_btn.setFixedWidth(60)
+        self.query_btn.clicked.connect(self._on_search)
+        row1.addWidget(self.query_btn)
+
         row1.addSpacing(12)
         row1.addWidget(BodyLabel("内容:"))
         self.content_search_input = LineEdit()
@@ -213,7 +218,7 @@ class ResultsPage(ScrollArea):
         self.data_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.setColumnWidth(2, 200)
-        self.data_table.setColumnWidth(4, 180)
+        self.data_table.setColumnWidth(4, 250)
         self.data_table.itemSelectionChanged.connect(self._on_selection_changed)
         self.data_table.doubleClicked.connect(self._on_table_double_clicked)
         self.data_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -294,14 +299,10 @@ class ResultsPage(ScrollArea):
             view_btn.clicked.connect(lambda checked, row=i: self._preview_article_at_row(row))
             btn_layout.addWidget(view_btn)
             if link:
-                pdf_btn = PushButton("导出PDF")
+                pdf_btn = PushButton("下载")
                 pdf_btn.setFixedSize(60, 26)
                 pdf_btn.clicked.connect(lambda checked, url=link: self._on_export_pdf(url))
                 btn_layout.addWidget(pdf_btn)
-                img_btn = PushButton("下载图片")
-                img_btn.setFixedSize(70, 26)
-                img_btn.clicked.connect(lambda checked, url=link: self._on_download_images(url))
-                btn_layout.addWidget(img_btn)
             self.data_table.setCellWidget(i, 4, container)
         self.count_label.setText(f"共 {len(articles)} 条记录")
 
@@ -476,7 +477,7 @@ class ResultsPage(ScrollArea):
 
         if link:
             extract_action = QAction("图片提取", self)
-            extract_action.triggered.connect(lambda: self._on_extract_images(link))
+            extract_action.triggered.connect(lambda: self._on_download_images(link))
             menu.addAction(extract_action)
 
         menu.exec(self.data_table.viewport().mapToGlobal(pos))

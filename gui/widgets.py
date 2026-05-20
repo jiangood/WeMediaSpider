@@ -866,7 +866,7 @@ class ImageExtractDialog(QDialog):
     def __init__(self, article_url, generate_pdf=True, parent=None):
         super().__init__(parent)
         self.generate_pdf = generate_pdf
-        title_text = "导出PDF" if generate_pdf else "下载图片"
+        title_text = "导出PDF" if generate_pdf else "图片提取"
         self.setWindowTitle(title_text)
         self.setModal(True)
         self.resize(560, 420)
