@@ -23,8 +23,8 @@
 """
 
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QWidget, QFileDialog
-from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QIcon, QCloseEvent, QScreen
+from PyQt6.QtCore import Qt, QSize, QTimer, QEvent
+from PyQt6.QtGui import QIcon, QCloseEvent, QScreen, QResizeEvent
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon,
@@ -211,18 +211,6 @@ class MainWindow(FluentWindow):
         )
         self.settings_page = SettingsPage(self)
         
-        # 初始化后台守护线程
-        from .workers import BackgroundScrapeDaemon
-        self.daemon = BackgroundScrapeDaemon(self.login_page.get_login_manager())
-        self.daemon.log_message.connect(self._on_daemon_log)
-        self.daemon.account_status_changed.connect(self._on_account_daemon_status)
-        
-        # 全局状态指示器
-        from .widgets import ProcessingIndicator
-        self.processing_indicator = ProcessingIndicator(self)
-        self.processing_indicator.setObjectName("processingIndicator")
-        self.processing_indicator.show()
-        
         # 延迟应用标签透明背景，确保所有组件都已创建
         QTimer.singleShot(100, self._apply_label_transparency)
     
@@ -242,42 +230,43 @@ class MainWindow(FluentWindow):
             apply_label_transparent_background(page)
     
     def _connect_signals(self):
-        # 爬取完成信号（保留兼容，但后台模式可能不用）
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)
-        # 数据放弃信号
         self.results_page.data_discarded.connect(self._on_data_discarded)
-        # 设置变更信号 - 同步到爬取页面
         self.settings_page.settings_changed.connect(self._on_settings_changed)
+
+        from .workers import BackgroundScrapeDaemon
+        from .widgets import ProcessingIndicator
+
+        self.daemon = BackgroundScrapeDaemon(self.login_page.get_login_manager())
+        self.daemon.log_message.connect(self._on_daemon_log)
+        self.daemon.account_status_changed.connect(self._on_account_status_changed)
+        self.daemon.phase_changed.connect(self._on_phase_changed)
+        self.daemon.start()
+
+        self.processing_indicator = ProcessingIndicator(self)
+        self.processing_indicator.show()
+
+        self.scrape_page.account_added.connect(lambda name: None)
     
     def _on_settings_changed(self, config: dict):
-        """处理设置变更事件，将新配置同步到爬取页面"""
         self.scrape_page.apply_settings(config)
-
-    def _on_daemon_log(self, message: str, level: str):
-        """后台线程日志 → 转发到爬取页面的日志面板"""
-        self.scrape_page.append_log(message, level)
-
-    def _on_account_daemon_status(self, account_name: str, status: str, message: str):
-        """后台线程账号状态变更 → 刷新表格 + 更新全局指示器"""
-        self.scrape_page.on_account_status_changed(account_name, status, message)
-
-        if status == 'processing':
-            self.processing_indicator.set_processing(f"正在处理: {account_name}")
-        elif status == 'completed':
-            self.processing_indicator.set_success(f"完成: {account_name}")
-        elif status == 'error':
-            self.processing_indicator.set_error(f"失败: {account_name}")
-        else:
-            self.processing_indicator.set_idle()
     
     def _on_scrape_completed(self, articles: list, source_info: str):
-        """处理爬取完成事件，加载结果数据并切换到结果页面"""
         self.results_page.load_articles_data(articles, source_info)
         self.switchTo(self.results_page)
     
     def _on_data_discarded(self):
-        """处理数据放弃事件，返回到爬取页面"""
         self.switchTo(self.scrape_page)
+
+    def _on_daemon_log(self, message: str):
+        self.scrape_page.append_log(message)
+
+    def _on_account_status_changed(self, account_name: str, status: str):
+        self.scrape_page._refresh_table()
+
+    def _on_phase_changed(self, phase: str):
+        labels = {'idle': '就绪', 'list': '爬取列表中', 'content': '爬取内容中', 'error': '出错'}
+        self.processing_indicator.set_phase(phase, labels.get(phase, ''))
 
     def _init_navigation(self):
         """初始化侧边导航项
@@ -306,18 +295,14 @@ class MainWindow(FluentWindow):
             NavigationItemPosition.BOTTOM
         )
     
-    def closeEvent(self, event: QCloseEvent):
-        """关闭时停止后台线程"""
-        if hasattr(self, 'daemon'):
-            self.daemon.stop()
-            self.daemon.wait(5000)
-        event.accept()
-
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
         if hasattr(self, 'processing_indicator'):
-            bar_width = 280
-            bar_height = 28
-            x = self.width() - bar_width - 16
-            y = self.height() - bar_height - 12
-            self.processing_indicator.setGeometry(x, y, bar_width, bar_height)
+            ind = self.processing_indicator
+            ind.setGeometry(self.width() - ind.width() - 16, self.height() - ind.height() - 40, ind.width(), ind.height())
+
+    def closeEvent(self, event: QCloseEvent):
+        if hasattr(self, 'daemon'):
+            self.daemon.stop()
+            self.daemon.wait(3000)
+        event.accept()

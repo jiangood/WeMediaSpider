@@ -41,6 +41,27 @@ from tqdm import tqdm
 import bs4
 
 from spider.log.utils import logger
+from markdownify import MarkdownConverter
+
+
+class ImageBlockConverter(MarkdownConverter):
+    def convert_img(self, el, text, parent_tags):
+        alt = el.attrs.get('alt', None) or ''
+        src = el.attrs.get('src', None) or ''
+        if not src:
+            src = el.attrs.get('data-src', None) or ''
+        title = el.attrs.get('title', None) or ''
+        title_part = ' "%s"' % title.replace('"', r'\"') if title else ''
+        if ('_inline' in parent_tags
+                and el.parent.name not in self.options['keep_inline_images_in']):
+            return alt
+        return '\n![%s](%s%s)\n' % (alt, src, title_part)
+
+
+def md(soup, **options):
+    return ImageBlockConverter(**options).convert_soup(soup)
+
+
 def get_fakid(headers, tok, query):
     """
     搜索公众号并获取 fakeid
@@ -306,7 +327,7 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
                 logger.info(f"检测到图片类型文章（page_share_img={is_image_article}, swiper={has_swiper}），使用特殊处理")
                 content = _extract_image_article_content(soup)
                 if content and len(content.strip()) >= MIN_CONTENT_LENGTH:
-                    return _md_to_html(content)
+                    return content
             
             # 尝试多个选择器
             content_ele = None
@@ -320,7 +341,7 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
             
             content = ""
             if content_ele:
-                content = str(content_ele[0])
+                content = md(content_ele[0], keep_inline_images_in=["section", "span"])
                 
                 # 验证内容是否有效（去除空白后长度大于阈值）
                 content_stripped = content.strip()
@@ -370,23 +391,35 @@ def get_article_content(url, headers, max_retries=3, retry_delay=2):
 
 
 def _extract_all_text_content(soup):
-    """最后的兜底方法：提取页面主要内容的HTML"""
-    main_content_selectors = [
-        '.rich_media_content',
-        '#js_content',
-        '.rich_media_area_primary',
-        'article',
-        '.article-content'
-    ]
+    """最后的兜底方法：提取页面所有可见文本（Markdown格式）"""
+    content_parts = []
     
+    title_ele = soup.select_one('.rich_media_title, #activity-name, h1')
+    if title_ele and title_ele.get_text(strip=True):
+        content_parts.append(f"# {title_ele.get_text(strip=True)}\n")
+    
+    main_content_selectors = [
+        '.rich_media_content', '#js_content', '.rich_media_area_primary',
+        'article', '.article-content'
+    ]
     for selector in main_content_selectors:
         ele = soup.select_one(selector)
         if ele:
-            html = str(ele)
-            if len(html.strip()) > 50:
-                return html
+            text = ele.get_text(separator='\n', strip=True)
+            if text and len(text) > 20:
+                content_parts.append(f"\n{text}\n")
+                break
     
-    return ""
+    images = soup.select('img[data-src], img[src*="mmbiz.qpic.cn"]')
+    if images:
+        content_parts.append("\n## 图片\n")
+        for i, img in enumerate(images[:20], 1):
+            src = img.get('data-src') or img.get('src') or ''
+            if src and 'mmbiz.qpic.cn' in src and 'data:image' not in src:
+                alt = img.get('alt') or f'图片{i}'
+                content_parts.append(f"\n![{alt}]({src})\n")
+    
+    return ''.join(content_parts) if content_parts else ""
 
 
 def _decode_html_entities(text):

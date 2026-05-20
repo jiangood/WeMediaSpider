@@ -49,7 +49,7 @@ from PyQt6.QtGui import QDesktopServices, QKeyEvent, QCursor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from qfluentwidgets import (
-    CardWidget as FluentCard, PrimaryPushButton, PushButton, BodyLabel,
+    CardWidget as FluentCard, PrimaryPushButton, PushButton,
     ProgressBar, BodyLabel, StrongBodyLabel, CaptionLabel,
     IconWidget, FluentIcon, PlainTextEdit, SpinBox, setCustomStyleSheet,
     TitleLabel, ToolTipFilter, ToolTipPosition, FlowLayout,
@@ -676,6 +676,12 @@ class ArticlePreviewDialog(QDialog):
         self.open_link_btn.setFixedWidth(150)
         self.open_link_btn.clicked.connect(self._on_open_link)
         toolbar_layout.addWidget(self.open_link_btn)
+
+        # 下载PDF按钮
+        self.download_pdf_btn = PrimaryPushButton("下载PDF", icon=FluentIcon.SAVE)
+        self.download_pdf_btn.setFixedWidth(120)
+        self.download_pdf_btn.clicked.connect(self._on_download_pdf)
+        toolbar_layout.addWidget(self.download_pdf_btn)
         
         # 关闭按钮
         close_btn = PrimaryPushButton("关闭", icon=FluentIcon.CLOSE)
@@ -807,17 +813,13 @@ class ArticlePreviewDialog(QDialog):
         pub_time = article.get('发布时间', '-')
         self.time_label.setText(f"📅 发布时间: {pub_time}")
         
-        # === 修改：尝试加载本地 PDF，失败回退 HTML ===
-        pdf_path = self._find_pdf(article)
-        if pdf_path and os.path.exists(pdf_path):
-            self.content_text.setUrl(QUrl.fromLocalFile(pdf_path))
+        # 更新内容（Markdown转HTML）
+        content = article.get('内容', '')
+        if content:
+            html = self._md_to_html(content)
+            self.content_text.setHtml(html, QUrl("https://mp.weixin.qq.com"))
         else:
-            content = article.get('内容', '')
-            if content:
-                self.content_text.setHtml(content, QUrl("https://mp.weixin.qq.com"))
-            else:
-                self.content_text.setHtml(
-                    "<html><body style='color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;'>无内容</body></html>")
+            self.content_text.setHtml("<html><body style='color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;'>无内容</body></html>")
         
         # 滚动到顶部
         self.content_text.page().runJavaScript("window.scrollTo(0,0)")
@@ -832,27 +834,6 @@ class ArticlePreviewDialog(QDialog):
         # 检查是否有链接
         link = article.get('链接', '')
         self.open_link_btn.setEnabled(bool(link))
-
-    def _find_pdf(self, article) -> str:
-        """根据文章信息查找对应的本地 PDF 路径"""
-        from spider.wechat.pdf_generator import _sanitize_filename
-        account_name = article.get('公众号', '')
-        title = article.get('标题', '')
-        if not account_name or not title:
-            return ''
-
-        safe_account = _sanitize_filename(account_name)
-        safe_title = _sanitize_filename(title)
-        stem = f"{safe_account}_{safe_title}"
-
-        candidates = [
-            os.path.join(os.getcwd(), 'download', safe_account, f"{stem}.pdf"),
-            os.path.join(os.getcwd(), 'download', f"{stem}.pdf"),
-        ]
-        for path in candidates:
-            if os.path.exists(path):
-                return path
-        return ''
     
     def _on_prev(self):
         """切换到上一篇文章"""
@@ -886,6 +867,78 @@ class ArticlePreviewDialog(QDialog):
         if 0 <= index < len(self.articles):
             self.current_index = index
             self._update_display()
+
+    def _md_to_html(self, text):
+        if not text:
+            return '<html><body style="color:#999;text-align:center;padding:40px;background:#1e1e1e;font-size:16px;">无内容</body></html>'
+        import re
+        text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'<img src="\2" alt="\1" style="max-width:100%;">', text)
+        text = re.sub(r'^## (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+        text = re.sub(r'^# (.+)$', r'<h1>\1</h1>', text, flags=re.MULTILINE)
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        parts = []
+        for line in lines:
+            if not line.startswith('<'):
+                parts.append(f'<p>{line}</p>')
+            else:
+                parts.append(line)
+        body = '\n'.join(parts)
+        return f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif; padding: 20px; line-height: 1.8; color: #333; background: #fff; }}
+img {{ max-width: 100%; height: auto; }}
+p {{ margin: 8px 0; }}
+</style></head><body>
+{body}
+</body></html>'''
+
+    def _on_download_pdf(self):
+        if not self.articles or self.current_index >= len(self.articles):
+            return
+        article = self.articles[self.current_index]
+        title = article.get('标题', '无标题')
+        account = article.get('公众号', '')
+        content = article.get('内容', '')
+
+        from PyQt6.QtWidgets import QFileDialog
+        safe_title = ''.join(c for c in title if c not in r'\/:*?"<>|')[:100] or 'untitled'
+        safe_account = ''.join(c for c in account if c not in r'\/:*?"<>|')[:50] or 'unknown'
+        default_name = f"{safe_account}_{safe_title}.pdf"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出PDF", default_name, "PDF文件 (*.pdf)"
+        )
+        if not file_path:
+            return
+
+        from spider.wechat.pdf_generator import generate_article_pdf
+        try:
+            pdf_path = generate_article_pdf(
+                article_title=title,
+                account_name=account,
+                markdown_content=content,
+                output_dir=os.path.dirname(file_path),
+            )
+            import shutil
+            if pdf_path != file_path:
+                shutil.move(pdf_path, file_path)
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.success(
+                title="PDF导出成功",
+                content=f"已保存到 {file_path}",
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=3000
+            )
+        except Exception as e:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.error(
+                title="PDF导出失败",
+                content=str(e),
+                parent=self,
+                position=InfoBarPosition.TOP,
+                duration=5000
+            )
 
 
 class ImageExtractDialog(QDialog):
@@ -1399,55 +1452,38 @@ class HistoryTagsContainer(QWidget):
 
 
 class ProcessingIndicator(QWidget):
-    """右下角悬浮状态指示器"""
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(28)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
-
+        self._phase = 'idle'
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 3, 10, 3)
         layout.setSpacing(6)
-
         self.dot = QLabel("●")
-        self.dot.setStyleSheet("font-size: 10px; color: #888;")
+        self.dot.setStyleSheet("color: #888; font-size: 10px;")
+        self.label = BodyLabel("就绪")
+        self.label.setStyleSheet("color: #aaa; font-size: 11px; background: transparent; border: none;")
         layout.addWidget(self.dot)
-
-        self.label = BodyLabel("等待中")
-        self.label.setStyleSheet("font-size: 11px; color: #aaa; background: transparent; border: none;")
         layout.addWidget(self.label)
-
-        self.setStyleSheet(f"""
-            ProcessingIndicatorsssss {{
+        self.setStyleSheet("""
+            ProcessingIndicator {
                 background-color: rgba(30, 30, 30, 0.92);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                border: 1px solid #333;
                 border-radius: 6px;
-            }}
+            }
         """)
-        self._update_style()
+        self.setFixedHeight(30)
+        self.adjustSize()
 
-    def _update_style(self):
-        self.setStyleSheet(f"""
-            #{self.objectName()} {{
-                background-color: rgba(30, 30, 30, 0.92);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 6px;
-            }}
-        """)
+    def set_phase(self, phase: str, message: str = ''):
+        self._phase = phase
+        colors = {'idle': '#888', 'list': '#5B9BD5', 'content': '#07C160', 'error': '#FA5151'}
+        labels = {'idle': '就绪', 'list': '爬取列表中', 'content': '爬取内容中', 'error': '出错'}
+        color = colors.get(phase, '#888')
+        label = message or labels.get(phase, '')
+        self.dot.setStyleSheet(f"color: {color}; font-size: 10px;")
+        self.label.setText(label)
+        self.adjustSize()
 
-    def set_idle(self, text="等待中"):
-        self.dot.setStyleSheet("font-size: 10px; color: #888;")
-        self.label.setText(text)
-
-    def set_processing(self, text):
-        self.dot.setStyleSheet("font-size: 10px; color: #07C160;")
-        self.label.setText(text)
-
-    def set_error(self, text):
-        self.dot.setStyleSheet("font-size: 10px; color: #FA5151;")
-        self.label.setText(text)
-
-    def set_success(self, text):
-        self.dot.setStyleSheet("font-size: 10px; color: #07C160;")
-        self.label.setText(text)
+    def set_message(self, msg: str):
+        self.label.setText(msg)
+        self.adjustSize()

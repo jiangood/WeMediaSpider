@@ -25,5 +25,8 @@ tqdm>=4.64.0
 # 图片处理（webp转png等）
 Pillow>=10.0.0
 
+# Markdown转换
+markdownify>=0.11.0
+
 # PDF生成
 weasyprint>=60.0
