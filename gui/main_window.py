@@ -348,108 +348,42 @@ class MainWindow(FluentWindow):
         )
     
     def closeEvent(self, event: QCloseEvent):
-        """处理窗口关闭事件
-        
-        检查是否有未保存的爬取结果，如果有则显示确认对话框，
-        让用户选择保存、放弃或取消关闭操作。
-        
-        Args:
-            event: 关闭事件对象，可通过 accept/ignore 控制是否关闭
-        """
         if self.results_page.has_unsaved_data():
-            # 有未保存的数据，显示确认对话框（支持点击外部关闭）
             msg_box = ClickOutsideMessageBox(
                 "未保存的数据",
                 f"您有 {len(self.results_page.articles)} 条爬取结果尚未保存。\n\n请选择操作：",
                 self
             )
-            
-            # 设置按钮文字和宽度
+
             msg_box.yesButton.setText("保存")
             msg_box.yesButton.setFixedWidth(110)
             msg_box.cancelButton.setText("放弃")
             msg_box.cancelButton.setFixedWidth(110)
-            
-            # 设置按钮布局间距
             msg_box.buttonLayout.setSpacing(16)
-            
-            # 使用变量跟踪用户选择
-            user_choice = {'action': None}  # 'save', 'discard', 'stay'
-            
+
+            user_choice = {'action': None}
+
             def on_save():
                 user_choice['action'] = 'save'
-            
+
             def on_discard():
                 user_choice['action'] = 'discard'
-            
+
             msg_box.yesButton.clicked.connect(on_save)
             msg_box.cancelButton.clicked.connect(on_discard)
-            
-            # 点击模态框外部关闭时，action 保持为 None，表示返回（不退出）
+
             msg_box.exec()
-            
+
             if user_choice['action'] == 'save':
-                # 用户选择保存
-                self._save_and_exit(event)
+                self.results_page._on_save_results()
+                if self.results_page.has_unsaved_data():
+                    event.ignore()
+                    return
+                event.accept()
             elif user_choice['action'] == 'discard':
-                # 用户选择放弃并退出 - 删除临时文件
-                self.results_page._delete_temp_file()
                 self.results_page._clear_unsaved_data()
                 event.accept()
             else:
-                # 用户选择返回（不退出）或关闭对话框
                 event.ignore()
         else:
-            # 没有未保存数据，直接退出
             event.accept()
-    
-    def _save_and_exit(self, event: QCloseEvent):
-        """保存数据并退出
-        
-        弹出文件保存对话框，让用户选择保存位置。
-        保存成功后关闭窗口，保存失败或取消则不退出。
-        
-        Args:
-            event: 关闭事件对象
-        """
-        import os
-        from datetime import datetime
-        import csv
-        
-        # 生成默认文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_name = f"results/爬取结果_{timestamp}.csv"
-        
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存结果", default_name, "CSV文件 (*.csv)"
-        )
-        
-        if file_path:
-            try:
-                # 确保目录存在
-                os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-                
-                articles = self.results_page.articles
-                with open(file_path, 'w', encoding='utf-8-sig', newline='') as f:
-                    if articles:
-                        writer = csv.DictWriter(f, fieldnames=articles[0].keys())
-                        writer.writeheader()
-                        writer.writerows(articles)
-                
-                # 保存成功，退出
-                self.results_page.is_unsaved = False
-                event.accept()
-            except Exception as e:
-                # 保存失败，显示错误并取消退出
-                from qfluentwidgets import InfoBar, InfoBarPosition
-                InfoBar.error(
-                    title="保存失败",
-                    content=str(e),
-                    parent=self,
-                    position=InfoBarPosition.TOP,
-                    duration=3000
-                )
-                event.ignore()
-        else:
-            # 用户取消保存，不退出
-            event.ignore()
