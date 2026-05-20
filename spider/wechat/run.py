@@ -41,7 +41,7 @@ from datetime import datetime, timedelta
 from spider.log.utils import logger
 from .login import WeChatSpiderLogin, quick_login
 from .scraper import WeChatScraper, BatchWeChatScraper
-from gui.utils import DEFAULT_OUTPUT_DIR
+from gui.utils import DEFAULT_OUTPUT_DIR, DB_PATH
 
 
 class WeChatSpiderRunner:
@@ -205,16 +205,11 @@ class WeChatSpiderRunner:
                 if i < len(filtered_articles) - 1:
                     time.sleep(interval)
         
-        # 保存结果到CSV
-        if output_file:
-            output_path = output_file
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = f"{account['wpub_name']}_{timestamp}.csv"
-        
-        logger.info(f"保存结果到: {output_path}")
-        success = scraper.save_articles_to_csv(filtered_articles, output_path)
-        
+        # 保存结果到数据库
+        db_path = output_file or DB_PATH
+        logger.info(f"保存结果到数据库: {db_path}")
+        success = scraper.save_articles_to_db(filtered_articles, db_path)
+
         if success:
             logger.success(f"成功保存 {len(filtered_articles)} 篇文章")
             return True
@@ -316,7 +311,6 @@ class WeChatSpiderRunner:
             'use_threading': threads > 1,
             'max_workers': threads,
             'include_content': include_content,
-            'output_file': os.path.join(output_dir, f"wechat_articles.csv")
         }
         
         # 开始爬取
@@ -330,7 +324,7 @@ class WeChatSpiderRunner:
         end_time = time.time()
         
         logger.info(f"\n爬取完成，耗时 {end_time - start_time:.2f} 秒")
-        logger.info(f"共获取 {len(articles)} 篇文章，已保存到 {config['output_file']}")
+        logger.info(f"共获取 {len(articles)} 篇文章")
         
         return True
 
