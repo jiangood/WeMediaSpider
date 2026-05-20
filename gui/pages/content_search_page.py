@@ -46,6 +46,8 @@ from qfluentwidgets import (
 from qfluentwidgets import TableWidget as FluentTable
 
 from ..styles import COLORS
+from spider.database import Database
+from gui.utils import DB_PATH
 
 
 def wildcard_to_regex(pattern, is_url_pattern=False):
@@ -257,6 +259,11 @@ class ContentSearchPage(QWidget):
         browse_btn.setFixedWidth(60)
         browse_btn.clicked.connect(self._on_browse_file)
         source_layout.addWidget(browse_btn)
+
+        db_btn = PushButton("数据库")
+        db_btn.setFixedWidth(70)
+        db_btn.clicked.connect(self._load_from_db)
+        source_layout.addWidget(db_btn)
         
         source_layout.addSpacing(10)
         
@@ -495,6 +502,22 @@ class ContentSearchPage(QWidget):
             '链接': ''
         })
     
+    def _load_from_db(self):
+        db = Database(DB_PATH)
+        self.articles = db.get_articles()
+        db.close()
+
+        self.current_file = None
+        self.data_status_label.setText(f"已加载 {len(self.articles)} 篇")
+        self.data_status_label.setStyleSheet(f"color: {COLORS['success']};")
+
+        self.search_results = []
+        self.result_table.setRowCount(0)
+        self.result_count_label.setText("搜索结果: 0 条匹配")
+        self.export_btn.setEnabled(False)
+
+        InfoBar.success(title="加载成功", content=f"从数据库加载 {len(self.articles)} 篇文章", parent=self, position=InfoBarPosition.TOP, duration=2000)
+
     def _set_search_pattern(self, pattern):
         """设置搜索模式并自动搜索"""
         self.search_input.setText(pattern)
