@@ -33,7 +33,6 @@ pyqt6_multimedia_datas = collect_data_files('PyQt6.QtMultimedia', include_py_fil
 datas = [
     ('config.json', '.'),
     ('gnivu-cfd69-001.ico', '.'),
-    ('icons8-微信-64.png', '.'),
     # 音频文件
     ('mic', 'mic'),
 ]

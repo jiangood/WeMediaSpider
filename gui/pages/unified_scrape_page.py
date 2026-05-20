@@ -39,9 +39,8 @@ import json
 
 from qfluentwidgets import (
     TitleLabel, BodyLabel, CaptionLabel, CardWidget,
-    PrimaryPushButton, PushButton, LineEdit,
-    DatePicker, CheckBox, InfoBar, InfoBarPosition, FluentIcon,
-    PickerColumnFormatter
+    PrimaryPushButton, PushButton, LineEdit, ComboBox,
+    CheckBox, InfoBar, InfoBarPosition, FluentIcon,
 )
 from qfluentwidgets import TableWidget as FluentTable
 
@@ -68,42 +67,6 @@ DEFAULT_CONFIG = {
     'output_dir': DEFAULT_OUTPUT_DIR,  # 输出目录，使用用户文档目录避免权限问题
     'cache_expire_hours': 96,  # 登录缓存有效期（小时）
 }
-
-
-class NumericMonthFormatter(PickerColumnFormatter):
-    """
-    月份数字格式化器
-    
-    qfluentwidgets 的 DatePicker 默认显示英文月份名（January, February...），
-    这个格式化器将其改为显示数字（1, 2, 3...），更符合中文用户习惯。
-    
-    使用方式：
-        date_picker.setColumnFormatter(0, NumericMonthFormatter())
-    """
-    
-    def encode(self, value):
-        """
-        编码：将月份数值转换为显示字符串
-        
-        Args:
-            value: 月份数值（1-12）
-            
-        Returns:
-            str: 月份的字符串表示
-        """
-        return str(value)
-    
-    def decode(self, value: str):
-        """
-        解码：将显示字符串转换回月份数值
-        
-        Args:
-            value: 月份字符串
-            
-        Returns:
-            int: 月份数值
-        """
-        return int(value)
 
 
 class UnifiedScrapePage(QWidget):
@@ -316,26 +279,13 @@ class UnifiedScrapePage(QWidget):
         interval_container.addStretch()
         grid.addLayout(interval_container, 0, 3)
         
-        # 第二行：日期范围
+        # 第二行：日期范围（选项模式）
         grid.addWidget(BodyLabel("日期范围"), 1, 0)
-        date_container = QHBoxLayout()
-        date_container.setSpacing(6)
-        self.start_date = DatePicker()
-        self.start_date.setColumnFormatter(0, NumericMonthFormatter())  # 月份使用数字格式
-        self.start_date.setColumnWidth(0, 50)  # 缩小月份列宽度
-        self.start_date.setDate(QDate.currentDate().addDays(-30))
-        date_container.addWidget(self.start_date)
-        date_sep = BodyLabel("→")
-        date_sep.setFixedWidth(16)
-        date_sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        date_container.addWidget(date_sep)
-        self.end_date = DatePicker()
-        self.end_date.setColumnFormatter(0, NumericMonthFormatter())  # 月份使用数字格式
-        self.end_date.setColumnWidth(0, 50)  # 缩小月份列宽度
-        self.end_date.setDate(QDate.currentDate())
-        date_container.addWidget(self.end_date)
-        date_container.addStretch()
-        grid.addLayout(date_container, 1, 1, 1, 3)
+        self.date_combo = ComboBox()
+        self.date_combo.addItems(["本月", "本季度", "本年", "最近3年", "最近5年", "全部"])
+        self.date_combo.setCurrentIndex(0)
+        self.date_combo.setMinimumWidth(150)
+        grid.addWidget(self.date_combo, 1, 1, 1, 3)
         
         # 第三行：并发数 | 获取正文
         grid.addWidget(BodyLabel("并发数"), 2, 0)
@@ -384,25 +334,8 @@ class UnifiedScrapePage(QWidget):
         self.keyword_filter_input.setMaximumWidth(200)
         grid.addWidget(self.keyword_filter_input, 3, 1)
         
-        grid.addWidget(BodyLabel("输出目录"), 3, 2)
-        output_container = QHBoxLayout()
-        output_container.setSpacing(4)
-        self.output_input = LineEdit()
-        # 获取配置中的输出目录，如果是旧值 'results' 则使用新的默认路径
-        config_output_dir = self.config.get('output_dir', DEFAULT_OUTPUT_DIR)
-        if config_output_dir == 'results':
-            config_output_dir = DEFAULT_OUTPUT_DIR
-        self.output_input.setText(config_output_dir)
-        self.output_input.setPlaceholderText("输出目录")
-        self.output_input.setMaximumWidth(100)
-        output_container.addWidget(self.output_input)
-        browse_btn = PushButton("...", icon=FluentIcon.FOLDER)
-        browse_btn.setFixedWidth(50)
-        browse_btn.setToolTip("浏览选择输出目录")
-        browse_btn.clicked.connect(self._on_browse_output)
-        output_container.addWidget(browse_btn)
-        output_container.addStretch()
-        grid.addLayout(output_container, 3, 3)
+        grid.addWidget(BodyLabel(""), 3, 2)
+        grid.addWidget(BodyLabel(""), 3, 3)
         
         right_layout.addWidget(config_card)
         
@@ -453,12 +386,6 @@ class UnifiedScrapePage(QWidget):
         if not is_checked:
             self.keyword_filter_input.clear()
     
-    def _on_browse_output(self):
-        """选择输出目录"""
-        dir_path = QFileDialog.getExistingDirectory(self, "选择输出目录")
-        if dir_path:
-            self.output_input.setText(dir_path)
-    
     def _on_start_scrape(self):
         """开始爬取"""
         accounts = self.account_list.get_accounts()
@@ -475,9 +402,23 @@ class UnifiedScrapePage(QWidget):
             InfoBar.warning(title="登录失效", content="请重新登录", parent=self, position=InfoBarPosition.TOP, duration=3000)
             return
         
-        # 使用嵌入式数据库存储爬取结果
-        output_dir = self.output_input.text().strip() or DEFAULT_OUTPUT_DIR
-        os.makedirs(output_dir, exist_ok=True)
+        # 根据日期选项计算起止日期
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        date_option = self.date_combo.currentText()
+        if date_option == "本月":
+            start = today.replace(day=1)
+        elif date_option == "本季度":
+            quarter_start_month = ((today.month - 1) // 3) * 3 + 1
+            start = today.replace(month=quarter_start_month, day=1)
+        elif date_option == "本年":
+            start = today.replace(month=1, day=1)
+        elif date_option == "最近3年":
+            start = today.replace(year=today.year - 3, month=1, day=1)
+        elif date_option == "最近5年":
+            start = today.replace(year=today.year - 5, month=1, day=1)
+        else:
+            start = today.replace(year=today.year - 10, month=1, day=1)
         
         # 获取正文关键词过滤
         keyword_filter = self.keyword_filter_input.text().strip() if self.content_check.isChecked() else ""
@@ -485,8 +426,8 @@ class UnifiedScrapePage(QWidget):
         # 使用异步模式
         config = {
             'accounts': accounts,
-            'start_date': self.start_date.date.toString("yyyy-MM-dd"),
-            'end_date': self.end_date.date.toString("yyyy-MM-dd"),
+            'start_date': start.strftime("%Y-%m-%d"),
+            'end_date': today.strftime("%Y-%m-%d"),
             'token': token, 'headers': headers,
             'max_pages_per_account': self.pages_spin.value(),
             'request_interval': self.interval_spin.value(),
@@ -688,5 +629,3 @@ class UnifiedScrapePage(QWidget):
             if not config['include_content']:
                 self.keyword_filter_input.clear()
         
-        if 'output_dir' in config:
-            self.output_input.setText(config['output_dir'])

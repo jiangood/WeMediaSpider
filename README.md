@@ -32,7 +32,7 @@
 
 ## 🚀 快速开始
 
-### 安装依赖
+### 方式一：源码运行（开发环境）
 
 ```bash
 # 克隆项目
@@ -41,27 +41,32 @@ cd WeMediaSpider
 
 # 安装依赖包
 pip install -r requirements.txt
-```
 
-### 运行程序
-
-```bash
-# 开发环境运行
+# 运行程序
 python run_gui.py
 ```
 
-### 使用打包版本
+### 方式二：打包版运行（给同事/客户）
 
-如果你想创建独立可执行文件：
+项目提供了一键构建脚本，生成独立可执行文件，无需安装 Python：
 
 ```bash
-# 构建可执行文件
-cd script
-build.bat
-
-# 创建安装程序
-build_installer.bat
+# 一键打包（自动安装 PyInstaller、构建 exe）
+script\build.bat
 ```
+
+构建完成后输出在 `dist\WeChatSpider\` 目录，把这个文件夹发给别人就能直接运行。
+
+### 方式三：安装包（正式分发）
+
+如果安装了 NSIS，运行构建脚本会自动生成 Windows 安装包：
+
+```bash
+# 全量构建（打包 exe + 压缩 + 制作安装包）
+script\build_installer.bat
+```
+
+安装包位于 `dist\WeChatSpider_Setup_版本号.exe`，支持开始菜单快捷方式和控制面板卸载。**需要先安装 [NSIS](https://nsis.sourceforge.io/)。**
 
 ## 📖 使用说明
 
@@ -118,7 +123,9 @@ WeMediaSpider/
 │   └── log/                # 日志模块
 ├── script/                  # 构建脚本
 │   ├── build.bat           # PyInstaller 打包脚本
-│   └── installer.nsi       # NSIS 安装脚本
+│   ├── build_installer.bat # 全量构建（打包 + 安装包）
+│   ├── installer.nsi       # NSIS 安装脚本
+│   └── run_nsis.bat        # NSIS 查找/运行脚本
 ├── config.json             # 配置文件
 ├── requirements.txt        # 依赖列表
 └── run_gui.py             # 程序入口
