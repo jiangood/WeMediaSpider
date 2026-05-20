@@ -41,6 +41,8 @@ from qfluentwidgets import TableWidget as FluentTable
 from ..styles import COLORS
 from ..widgets import ArticlePreviewDialog
 from ..utils import DEFAULT_OUTPUT_DIR
+from spider.database import Database
+from gui.utils import DB_PATH
 
 # ============================================================
 # 导出格式配置
@@ -505,6 +507,53 @@ class ResultsPage(ScrollArea):
             duration=3000
         )
     
+    def load_from_db(self, account=None, source_info="数据库"):
+        db = Database(DB_PATH)
+        if account:
+            rows = db.get_articles(account)
+        else:
+            rows = db.get_articles()
+        db.close()
+
+        if not rows:
+            InfoBar.warning(title="提示", content="数据库中没有数据", parent=self, position=InfoBarPosition.TOP, duration=2000)
+            return
+
+        self.articles = []
+        accounts_set = set()
+        for row in rows:
+            article = {
+                '公众号': row.get('account_name', ''),
+                '标题': row.get('title', ''),
+                '发布时间': row.get('publish_time', ''),
+                '链接': row.get('link', ''),
+                '内容': row.get('content', '')
+            }
+            self.articles.append(article)
+            if article['公众号']:
+                accounts_set.add(article['公众号'])
+
+        self.current_file = None
+        self.is_unsaved = True
+        self.source_info = source_info
+        self.temp_file_path = None
+
+        self.account_filter.clear()
+        self.account_filter.addItem("全部")
+        for account in sorted(accounts_set):
+            self.account_filter.addItem(account)
+
+        self._display_articles(self.articles)
+
+        self.source_label.setText(f"数据来源: {source_info} | 共 {len(self.articles)} 条记录 (未保存)")
+        self.source_card.show()
+        self.save_btn.show()
+        self.discard_btn.show()
+
+        self.file_input.clear()
+
+        InfoBar.success(title="数据已加载", content=f"{source_info} - 共 {len(self.articles)} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
+
     def _on_save_results(self):
         """
         保存爬取结果
