@@ -160,6 +160,18 @@ WECHAT_CACHE_FILE = get_wechat_cache_file()
 ACCOUNT_HISTORY_FILE = get_account_history_file()
 
 
+def get_db_path() -> str:
+    """获取数据库文件路径
+
+    Returns:
+        str: wechat_spider.db 的完整路径
+    """
+    return get_cache_file_path('wechat_spider.db')
+
+
+DB_PATH = get_db_path()
+
+
 # ==================== 音频播放功能 ====================
 
 def get_mic_dir() -> str:
