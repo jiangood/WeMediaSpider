@@ -31,8 +31,6 @@
 """
 
 import json
-import os
-import csv
 import random
 import time
 import threading
@@ -43,6 +41,7 @@ from typing import List, Dict, Any, Optional, Callable
 
 from spider.log.utils import logger
 from spider.wechat.utils import get_fakid, get_articles_list, get_article_content, format_time
+from spider.database import Database
 
 
 class WeChatScraper:
@@ -266,44 +265,17 @@ class WeChatScraper:
         logger.info(f"日期过滤: {len(articles)} -> {len(filtered_articles)} 篇")
         return filtered_articles
     
-    def save_articles_to_csv(self, articles, filename):
-        """
-        保存文章到CSV文件
-        
-        Args:
-            articles: 文章列表
-            filename: 文件名
-            
-        Returns:
-            bool: 保存是否成功
-        """
+    def save_articles_to_db(self, articles, db_path) -> bool:
         if not articles:
             return False
-        
         try:
-            # 确保目录存在
-            os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
-            
-            with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f)
-                
-                # 写入标题行
-                writer.writerow(['公众号', '标题', '发布时间', '链接', '内容'])
-                
-                # 写入数据行
-                for article in articles:
-                    writer.writerow([
-                        article['name'],
-                        article['title'],
-                        article.get('publish_time', ''),
-                        article['link'],
-                        article.get('content', '')
-                    ])
-                    
-            return True
-            
+            db = Database(db_path)
+            count = db.save_articles(articles)
+            db.close()
+            logger.info(f"已保存 {count} 篇文章到数据库")
+            return count > 0
         except Exception as e:
-            logger.error(f"保存CSV失败: {e}")
+            logger.error(f"保存到数据库失败: {e}")
             return False
     
     def _trigger_progress(self, current, total):
@@ -453,7 +425,7 @@ class BatchWeChatScraper:
         if not self.is_cancelled:
             output_file = config.get('output_file')
             if output_file:
-                self.scraper.save_articles_to_csv(all_articles, output_file)
+                self.scraper.save_articles_to_db(all_articles, output_file)
             
             # 触发完成回调
             self._trigger_batch_completed(len(all_articles))
@@ -889,7 +861,7 @@ class AsyncBatchWeChatScraper:
             if not self.is_cancelled:
                 output_file = config.get('output_file')
                 if output_file and all_articles:
-                    self._save_articles_to_csv(all_articles, output_file)
+                    self._save_articles_to_db(all_articles, output_file)
                 
                 # 触发完成回调
                 self._trigger_batch_completed(len(all_articles))
@@ -1093,30 +1065,16 @@ class AsyncBatchWeChatScraper:
         logger.info(f"正文关键词过滤: {len(articles)} -> {len(filtered)} 篇 (关键词: {keyword})")
         return filtered
     
-    def _save_articles_to_csv(self, articles: List[Dict], filename: str) -> bool:
-        """保存文章到CSV文件"""
+    def _save_articles_to_db(self, articles: List[Dict], db_path: str) -> bool:
         if not articles:
             return False
-        
         try:
-            os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
-            
-            with open(filename, 'w', newline='', encoding='utf-8-sig') as f:
-                writer = csv.writer(f)
-                writer.writerow(['公众号', '标题', '发布时间', '链接', '内容'])
-                
-                for article in articles:
-                    writer.writerow([
-                        article.get('name', ''),
-                        article.get('title', ''),
-                        article.get('publish_time', ''),
-                        article.get('link', ''),
-                        article.get('content', '')
-                    ])
-            
-            return True
+            db = Database(db_path)
+            count = db.save_articles(articles)
+            db.close()
+            return count > 0
         except Exception as e:
-            logger.error(f"保存CSV失败: {e}")
+            logger.error(f"保存到数据库失败: {e}")
             return False
     
     def _trigger_article_progress(self, article_count: int, message: str):
