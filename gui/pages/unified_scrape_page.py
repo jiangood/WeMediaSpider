@@ -62,9 +62,7 @@ CONFIG_FILE = 'config.json'
 DEFAULT_CONFIG = {
     'max_pages': 10,           # 每个公众号最多爬取的页数
     'request_interval': 10,    # 请求间隔（秒），避免触发反爬
-    'max_workers': 5,          # 最大并发数
     'include_content': False,  # 是否获取文章正文内容
-    'output_dir': DEFAULT_OUTPUT_DIR,  # 输出目录，使用用户文档目录避免权限问题
     'cache_expire_hours': 96,  # 登录缓存有效期（小时）
 }
 
@@ -287,20 +285,8 @@ class UnifiedScrapePage(QWidget):
         self.date_combo.setMinimumWidth(150)
         grid.addWidget(self.date_combo, 1, 1, 1, 3)
         
-        # 第三行：并发数 | 获取正文
-        grid.addWidget(BodyLabel("并发数"), 2, 0)
-        concurrent_container = QHBoxLayout()
-        concurrent_container.setSpacing(4)
-        self.concurrent_spin = CustomSpinBox(1, 10, self.config.get('max_workers', 5))
-        self.concurrent_spin.setFixedWidth(110)
-        self.concurrent_spin.setToolTip("每个公众号的最大并发请求数")
-        concurrent_container.addWidget(self.concurrent_spin)
-        concurrent_unit = BodyLabel("并发")
-        concurrent_unit.setStyleSheet("color: #888; font-size: 12px;")
-        concurrent_container.addWidget(concurrent_unit)
-        concurrent_container.addStretch()
-        grid.addLayout(concurrent_container, 2, 1)
-        
+        # 第三行：获取正文
+        grid.addWidget(BodyLabel(""), 2, 0)
         self.content_check = CheckBox("获取正文内容（较慢）")
         self.content_check.setChecked(self.config.get('include_content', False))
         self.content_check.stateChanged.connect(self._on_content_check_changed)
@@ -433,9 +419,7 @@ class UnifiedScrapePage(QWidget):
             'request_interval': self.interval_spin.value(),
             'include_content': self.content_check.isChecked(),
             'content_keyword_filter': keyword_filter,  # 正文关键词过滤
-            'db_path': DB_PATH,
-            'max_concurrent_accounts': min(3, len(accounts)),  # 最多3个公众号并发
-            'max_concurrent_requests': self.concurrent_spin.value()
+            'db_path': DB_PATH
         }
         
         # 初始化状态表格
@@ -618,9 +602,6 @@ class UnifiedScrapePage(QWidget):
         
         if 'request_interval' in config:
             self.interval_spin.setValue(config['request_interval'])
-        
-        if 'max_workers' in config:
-            self.concurrent_spin.setValue(config['max_workers'])
         
         if 'include_content' in config:
             self.content_check.setChecked(config['include_content'])
