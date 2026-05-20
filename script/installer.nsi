@@ -10,7 +10,7 @@
 !define PRODUCT_NAME_CN "微信公众号爬虫"
 !define PRODUCT_VERSION "3.8.0"
 !define PRODUCT_PUBLISHER "WeChatSpider"
-!define PRODUCT_WEB_SITE "https://github.com/WeChatSpider"
+!define PRODUCT_WEB_SITE "https://github.com/jiangood/WeMediaSpider"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\WeChatSpider.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"

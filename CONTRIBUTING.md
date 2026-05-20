@@ -8,7 +8,7 @@
 
 如果您发现了 bug，请：
 
-1. 在 [Issues](https://github.com/vag-Zhao/WeMediaSpider/issues) 中搜索是否已有相关报告
+1. 在 [Issues](https://github.com/jiangood/WeMediaSpider/issues) 中搜索是否已有相关报告
 2. 如果没有，创建一个新的 Issue，使用 Bug 反馈模板
 3. 提供详细的复现步骤和环境信息
 
@@ -67,6 +67,6 @@ docs: 更新安装说明
 
 ## 问题？
 
-如有任何问题，欢迎在 Issues 中提问或发送邮件至 zgs3344@hunnu.edu.cn。
+如有任何问题，欢迎在 Issues 中提问或发送邮件至 410518072@qq.com。
 
 谢谢！ 🎉
