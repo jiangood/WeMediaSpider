@@ -140,8 +140,8 @@ class BatchScrapeWorker(QThread):
                 self.scrape_failed.emit("已取消")
                 return
             
-            output_file = self.config.get('output_file', '')
-            self.scrape_success.emit(self.articles, output_file)
+            db_path = self.config.get('db_path', '')
+            self.scrape_success.emit(self.articles, db_path)
             
         except Exception as e:
             self.scrape_failed.emit(f"批量爬取出错: {str(e)}")
@@ -261,8 +261,8 @@ class AsyncBatchScrapeWorker(QThread):
                 self.scrape_failed.emit("已取消")
                 return
             
-            output_file = self.config.get('output_file', '')
-            self.scrape_success.emit(self.articles, output_file)
+            db_path = self.config.get('db_path', '')
+            self.scrape_success.emit(self.articles, db_path)
             
         except Exception as e:
             import traceback
