@@ -1,39 +1,39 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-微信公众号爬虫 GUI 模块
+寰俊鍏紬鍙风埇铏?GUI 妯″潡
 
-本模块提供基于 PyQt6 和 qfluentwidgets 的图形用户界面，采用 Fluent Design 设计风格。
-界面整体使用微信风格的暗黑主题配色，主色调为微信绿 (#07C160)。
+鏈ā鍧楁彁渚涘熀浜?PyQt6 鍜?qfluentwidgets 鐨勫浘褰㈢敤鎴风晫闈紝閲囩敤 Fluent Design 璁捐椋庢牸銆?
+鐣岄潰鏁翠綋浣跨敤寰俊椋庢牸鐨勬殫榛戜富棰橀厤鑹诧紝涓昏壊璋冧负寰俊缁?(#07C160)銆?
 
-模块结构:
-    - app.py: 应用程序入口，负责初始化 QApplication 和主题设置
-    - main_window.py: 主窗口实现，基于 FluentWindow 的导航式布局
-    - pages/: 各功能页面的实现
-        - welcome_page.py: 欢迎页面
-        - login_page.py: 微信登录页面
-        - account_management_page.py: 公众号管理页面
-        - articles_page.py: 文章列表页面（含搜索）
-        - article_downloader.py: 文章图片下载
-        - settings_page.py: 设置页面
-    - widgets.py: 自定义控件（进度条、卡片、历史标签等）
-    - workers.py: 后台工作线程（同步/异步爬取）
-    - styles.py: 全局样式定义
-    - utils.py: 工具函数（路径处理、音频播放等）
-    - history_manager.py: 公众号历史记录管理
+妯″潡缁撴瀯:
+    - app.py: 搴旂敤绋嬪簭鍏ュ彛锛岃礋璐ｅ垵濮嬪寲 QApplication 鍜屼富棰樿缃?
+    - main_window.py: 涓荤獥鍙ｅ疄鐜帮紝鍩轰簬 FluentWindow 鐨勫鑸紡甯冨眬
+    - pages/: 鍚勫姛鑳介〉闈㈢殑瀹炵幇
+        - welcome_page.py: 娆㈣繋椤甸潰
+        - login_page.py: 寰俊鐧诲綍椤甸潰
+        - account_management_page.py: 鍏紬鍙风鐞嗛〉闈?
+        - articles_page.py: 鏂囩珷鍒楄〃椤甸潰锛堝惈鎼滅储锛?
+        - article_downloader.py: 鏂囩珷鍥剧墖涓嬭浇
+        - settings_page.py: 璁剧疆椤甸潰
+    - widgets.py: 鑷畾涔夋帶浠讹紙杩涘害鏉°€佸崱鐗囥€佸巻鍙叉爣绛剧瓑锛?
+    - workers.py: 鍚庡彴宸ヤ綔绾跨▼锛堝悓姝?寮傛鐖彇锛?
+    - styles.py: 鍏ㄥ眬鏍峰紡瀹氫箟
+    - utils.py: 宸ュ叿鍑芥暟锛堣矾寰勫鐞嗐€侀煶棰戞挱鏀剧瓑锛?
+    - history_manager.py: 鍏紬鍙峰巻鍙茶褰曠鐞?
 
-使用示例:
+浣跨敤绀轰緥:
     >>> from gui import run_app
-    >>> run_app()  # 启动 GUI 应用
+    >>> run_app()  # 鍚姩 GUI 搴旂敤
 
-技术栈:
-    - PyQt6: Qt6 的 Python 绑定
-    - qfluentwidgets: Fluent Design 风格的 Qt 组件库
-    - QMediaPlayer: 音频播放支持
+鎶€鏈爤:
+    - PyQt6: Qt6 鐨?Python 缁戝畾
+    - qfluentwidgets: Fluent Design 椋庢牸鐨?Qt 缁勪欢搴?
+    - QMediaPlayer: 闊抽鎾斁鏀寔
 
-作者: WeChatSpider Team
-版本: 1.0
+浣滆€? WeChatSpider Team
+鐗堟湰: 1.0
 """
 
 __version__ = "1.0"
@@ -41,3 +41,4 @@ __version__ = "1.0"
 from .app import run_app
 
 __all__ = ['run_app']
+

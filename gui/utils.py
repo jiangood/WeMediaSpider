@@ -10,7 +10,7 @@ GUI 工具函数模块
     - get_app_data_dir(): 获取应用数据目录（存储配置和缓存）
     - get_cache_file_path(): 获取缓存文件的完整路径
     - get_wechat_cache_file(): 获取微信缓存文件路径
-    - get_account_history_file(): 获取公众号历史记录文件路径
+    - get_wechat_cache_file(): 获取微信缓存文件路径
 
 音频播放:
     - SoundPlayer: 音频播放器单例类
