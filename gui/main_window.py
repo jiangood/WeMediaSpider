@@ -224,6 +224,9 @@ class MainWindow(FluentWindow):
         ]
         for page in pages:
             apply_label_transparent_background(page)
+        
+        # 同时处理主窗口自身的标签（导航栏、标题栏等）
+        apply_label_transparent_background(self)
     
     def _connect_signals(self):
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)

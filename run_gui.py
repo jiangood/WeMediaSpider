@@ -186,7 +186,12 @@ def main():
     
     # ---- 创建并显示主窗口 ----
     
+    from gui.app import DARK_THEME_STYLESHEET
     from gui.main_window import MainWindow
+    
+    # 应用全局暗黑主题样式表，确保所有组件在窗口显示前已有正确样式
+    app.setStyleSheet(DARK_THEME_STYLESHEET)
+    
     window = MainWindow()
     window.show()
     
