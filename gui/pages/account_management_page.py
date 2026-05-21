@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QTextEdit, QAbstractItemView
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QTextEdit, QAbstractItemView, QDialog
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from datetime import datetime
@@ -15,6 +15,7 @@ from qfluentwidgets import TableWidget as FluentTable
 from ..styles import COLORS
 from spider.database import Database
 from gui.utils import DB_PATH
+from .account_edit_dialog import AccountEditDialog
 
 
 class AccountManagementPage(QWidget):
@@ -37,34 +38,20 @@ class AccountManagementPage(QWidget):
         title = TitleLabel("公众号管理")
         layout.addWidget(title)
 
-        add_card = CardWidget()
-        add_layout = QHBoxLayout(add_card)
-        add_layout.setContentsMargins(16, 12, 16, 12)
-        add_layout.setSpacing(8)
-
-        self.name_input = LineEdit()
-        self.name_input.setPlaceholderText("输入公众号名称，回车添加")
-        add_layout.addWidget(self.name_input, 1)
-
-        self.date_combo = ComboBox()
-        self.date_combo.addItems(["最近7天", "本月", "本季度", "本年", "最近3年", "全部"])
-        self.date_combo.setCurrentIndex(0)
-        self.date_combo.setMinimumWidth(120)
-        add_layout.addWidget(self.date_combo)
-
-        self.add_btn = PrimaryPushButton("添加", icon=FluentIcon.ADD)
-        self.add_btn.setFixedWidth(100)
-        add_layout.addWidget(self.add_btn)
-        layout.addWidget(add_card)
-
         table_card = CardWidget()
         table_layout = QVBoxLayout(table_card)
         table_layout.setContentsMargins(16, 12, 16, 12)
         table_layout.setSpacing(6)
 
+        table_header = QHBoxLayout()
         table_title = BodyLabel("已添加的公众号")
         table_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #0078d4;")
-        table_layout.addWidget(table_title)
+        table_header.addWidget(table_title)
+        table_header.addStretch()
+        add_btn = PrimaryPushButton("添加公众号", icon=FluentIcon.ADD)
+        add_btn.clicked.connect(self._on_add_account)
+        table_header.addWidget(add_btn)
+        table_layout.addLayout(table_header)
 
         self.account_table = FluentTable()
         self.account_table.setColumnCount(6)
@@ -116,26 +103,21 @@ class AccountManagementPage(QWidget):
         log_layout.addWidget(self.log_text)
         layout.addWidget(log_card)
 
-        self.name_input.returnPressed.connect(self._on_add_account)
-        self.add_btn.clicked.connect(self._on_add_account)
-
     def _on_add_account(self):
-        name = self.name_input.text().strip()
-        if not name:
-            InfoBar.warning(title="提示", content="请输入公众号名称", parent=self, position=InfoBarPosition.TOP, duration=2000)
-            return
-        date_range = self.date_combo.currentText()
-        db = Database(DB_PATH)
-        try:
-            if db.add_account(name, date_range):
-                InfoBar.success(title="已添加", content=f"{name} 已加入爬取队列", parent=self, position=InfoBarPosition.TOP, duration=2000)
-                self.name_input.clear()
-                self.account_added.emit(name)
-                self._refresh_table()
-            else:
-                InfoBar.warning(title="提示", content=f"{name} 已存在", parent=self, position=InfoBarPosition.TOP, duration=2000)
-        finally:
-            db.close()
+        dialog = AccountEditDialog(parent=self, mode='add')
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name = dialog.get_name()
+            date_range = dialog.get_date_range()
+            db = Database(DB_PATH)
+            try:
+                if db.add_account(name, date_range):
+                    InfoBar.success(title="已添加", content=f"{name} 已加入爬取队列", parent=self, position=InfoBarPosition.TOP, duration=2000)
+                    self.account_added.emit(name)
+                    self._refresh_table()
+                else:
+                    InfoBar.warning(title="提示", content=f"{name} 已存在", parent=self, position=InfoBarPosition.TOP, duration=2000)
+            finally:
+                db.close()
 
     def _refresh_table(self):
         db = Database(DB_PATH)
@@ -180,9 +162,13 @@ class AccountManagementPage(QWidget):
                 btn_layout = QHBoxLayout(container)
                 btn_layout.setContentsMargins(2, 2, 2, 2)
                 btn_layout.setSpacing(4)
+                edit_btn = PushButton("编辑")
+                edit_btn.setFixedSize(50, 26)
+                name = acc['name']
+                edit_btn.clicked.connect(lambda checked, n=name: self._on_edit_account(n))
+                btn_layout.addWidget(edit_btn)
                 del_btn = PushButton("删除")
                 del_btn.setFixedSize(50, 26)
-                name = acc['name']
                 del_btn.clicked.connect(lambda checked, n=name: self._on_delete_account(n))
                 btn_layout.addWidget(del_btn)
                 if status == 'error':
@@ -212,6 +198,27 @@ class AccountManagementPage(QWidget):
         finally:
             db.close()
 
+    def _on_edit_account(self, name):
+        db = Database(DB_PATH)
+        try:
+            accounts = db.get_wechat_accounts()
+            account_data = next((a for a in accounts if a['name'] == name), None)
+            if not account_data:
+                return
+        finally:
+            db.close()
+
+        dialog = AccountEditDialog(parent=self, mode='edit', account_data=account_data)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_date_range = dialog.get_date_range()
+            db = Database(DB_PATH)
+            try:
+                db.update_account_date_range(name, new_date_range)
+                InfoBar.success(title="已更新", content=f"{name} 时间范围已更新为 {new_date_range}", parent=self, position=InfoBarPosition.TOP, duration=2000)
+                self._refresh_table()
+            finally:
+                db.close()
+
     def _update_account_row(self, name, status):
         status_map = {
             'pending': '等待列表', 'list_done': '列表完成',
@@ -233,6 +240,10 @@ class AccountManagementPage(QWidget):
                     btn_layout = QHBoxLayout(container)
                     btn_layout.setContentsMargins(2, 2, 2, 2)
                     btn_layout.setSpacing(4)
+                    edit_btn = PushButton("编辑")
+                    edit_btn.setFixedSize(50, 26)
+                    edit_btn.clicked.connect(lambda checked, n=name: self._on_edit_account(n))
+                    btn_layout.addWidget(edit_btn)
                     del_btn = PushButton("删除")
                     del_btn.setFixedSize(50, 26)
                     del_btn.clicked.connect(lambda checked, n=name: self._on_delete_account(n))

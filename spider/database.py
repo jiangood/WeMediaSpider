@@ -180,6 +180,13 @@ class Database:
         )
         self.conn.commit()
 
+    def update_account_date_range(self, name: str, date_range: str):
+        self.conn.execute(
+            "UPDATE wechat_account SET date_range = ?, status = 'pending', updated_at = datetime('now','localtime') WHERE name = ?",
+            (date_range, name)
+        )
+        self.conn.commit()
+
     def get_article_without_content(self) -> Optional[Dict]:
         row = self.conn.execute(
             "SELECT id, account_name, title, link FROM articles WHERE content IS NULL OR content = '' LIMIT 1"
