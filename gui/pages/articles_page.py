@@ -504,7 +504,7 @@ class ArticlesPage(ScrollArea):
         menu = QMenu(self)
 
         preview_action = QAction("查看文章", self)
-        preview_action.triggered.connect(lambda r=real_row: self._preview_article_at_row(r))
+        preview_action.triggered.connect(lambda: self._preview_article_at_row(real_row))
         menu.addAction(preview_action)
 
         open_action = QAction("查看原文", self)
@@ -529,13 +529,13 @@ class ArticlesPage(ScrollArea):
         pdf_action.setEnabled(article.get('has_content', False))
         if not article.get('has_content', False):
             pdf_action.setToolTip("文章内容未爬取，无法生成PDF")
-        pdf_action.triggered.connect(lambda r=real_row: self._on_download_pdf(r))
+        pdf_action.triggered.connect(lambda: self._on_download_pdf(real_row))
         menu.addAction(pdf_action)
 
         menu.addSeparator()
 
         delete_action = QAction("删除", self)
-        delete_action.triggered.connect(lambda d=displayed_row, l=link: self._on_delete_article(d, l))
+        delete_action.triggered.connect(lambda: self._on_delete_article(displayed_row, link))
         menu.addAction(delete_action)
 
         menu.exec(self.data_table.viewport().mapToGlobal(pos))
