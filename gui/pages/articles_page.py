@@ -19,7 +19,7 @@
     - 底部：打开结果目录按钮
 """
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QAbstractItemView, QMenu, QApplication
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QAbstractItemView, QMenu, QApplication, QMessageBox
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices, QAction
 import os
@@ -357,34 +357,54 @@ class ArticlesPage(ScrollArea):
 
         menu = QMenu(self)
 
-        preview_action = QAction("全屏预览", self)
+        preview_action = QAction("查看文章", self)
         preview_action.triggered.connect(lambda: self._preview_article_at_row(row))
         menu.addAction(preview_action)
 
-        if link:
-            open_action = QAction("查看原文", self)
-            open_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(link)))
-            menu.addAction(open_action)
-
-        if match_text:
-            menu.addSeparator()
-            copy_match_action = QAction("复制匹配内容", self)
-            copy_match_action.triggered.connect(lambda: QApplication.clipboard().setText(match_text))
-            menu.addAction(copy_match_action)
-
-            if match_text.startswith('http'):
-                open_match_action = QAction("查看原文匹配链接", self)
-                open_match_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(match_text)))
-                menu.addAction(open_match_action)
+        open_action = QAction("查看原文", self)
+        open_action.setEnabled(bool(link))
+        if not link:
+            open_action.setToolTip("原文可能已删除")
+        open_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(link)))
+        menu.addAction(open_action)
 
         menu.addSeparator()
 
-        if link:
-            extract_action = QAction("图片提取", self)
-            extract_action.triggered.connect(lambda: self._on_download_images(link))
-            menu.addAction(extract_action)
+        extract_action = QAction("图片提取", self)
+        extract_action.setEnabled(bool(link))
+        if not link:
+            extract_action.setToolTip("原文可能已删除")
+        extract_action.triggered.connect(lambda: self._on_download_images(link))
+        menu.addAction(extract_action)
+
+        menu.addSeparator()
+
+        delete_action = QAction("删除", self)
+        delete_action.triggered.connect(lambda: self._on_delete_article(row, link))
+        menu.addAction(delete_action)
 
         menu.exec(self.data_table.viewport().mapToGlobal(pos))
+
+    def _on_delete_article(self, row, link):
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除文章「{self.data_table.item(row, 1).text()}」吗？\n此操作不可恢复。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        title = self.data_table.item(row, 1).text()
+        db = Database(DB_PATH)
+        deleted = db.delete_article(link)
+        db.close()
+
+        if deleted:
+            InfoBar.success(title="已删除", content=f"文章「{title}」已删除", parent=self, position=InfoBarPosition.TOP, duration=3000)
+            self._load_from_db(silent=True)
+        else:
+            InfoBar.error(title="删除失败", content="未找到该文章", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
     def _preview_article_at_row(self, row):
         self.data_table.selectRow(row)
