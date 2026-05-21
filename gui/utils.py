@@ -375,15 +375,29 @@ def export_article_pdf(title: str, account: str, content: str, parent):
         parent=parent,
     )
 
+    def _make_msgbox():
+        box = QMessageBox(parent)
+        box.setStyleSheet("""
+            QMessageBox { background-color: #2d2d2d; }
+            QMessageBox QLabel { color: #ffffff; font-size: 14px; min-width: 360px; }
+            QPushButton {
+                background-color: #3d3d3d; border: 1px solid rgba(255,255,255,0.1);
+                border-radius: 4px; padding: 6px 20px; color: #ffffff; font-size: 13px;
+            }
+            QPushButton:hover { background-color: #4d4d4d; }
+            QPushButton:pressed { background-color: #555555; }
+        """)
+        return box
+
     def _on_pdf_done(fp):
-        msg = QMessageBox(parent)
+        msg = _make_msgbox()
         msg.setWindowTitle("PDF导出成功")
         msg.setText(f"PDF已保存到:\n{fp}")
         msg.setIcon(QMessageBox.Icon.Information)
         btn_open = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
         btn_folder = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
-        btn_close = msg.addButton("关闭", QMessageBox.ButtonRole.RejectRole)
-        msg.setDefaultButton(btn_close)
+        msg.addButton("关闭", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(msg.buttons()[-1])
         msg.exec()
         if msg.clickedButton() == btn_open:
             QDesktopServices.openUrl(QUrl.fromLocalFile(fp))
@@ -391,10 +405,11 @@ def export_article_pdf(title: str, account: str, content: str, parent):
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(fp)))
 
     def _on_pdf_error(err):
-        msg = QMessageBox(parent)
+        msg = _make_msgbox()
         msg.setWindowTitle("PDF导出失败")
         msg.setText(str(err))
         msg.setIcon(QMessageBox.Icon.Critical)
+        msg.addButton("确定", QMessageBox.ButtonRole.AcceptRole)
         msg.exec()
 
     worker.pdf_export_success.connect(_on_pdf_done)
