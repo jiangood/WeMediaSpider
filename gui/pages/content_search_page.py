@@ -672,7 +672,7 @@ class ContentSearchPage(QWidget):
         menu.addAction(copy_match_action)
         
         if match_text.startswith('http'):
-            open_link_action = QAction("在浏览器中打开", self)
+            open_link_action = QAction("查看原文", self)
             open_link_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(match_text)))
             menu.addAction(open_link_action)
         

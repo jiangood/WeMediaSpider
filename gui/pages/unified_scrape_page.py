@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QTextEdit
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QTextEdit, QAbstractItemView
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 from datetime import datetime
@@ -76,6 +76,7 @@ class UnifiedScrapePage(QWidget):
         self.account_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.account_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.account_table.verticalHeader().setVisible(False)
+        self.account_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table_layout.addWidget(self.account_table, 1)
         layout.addWidget(table_card, 1)
 
