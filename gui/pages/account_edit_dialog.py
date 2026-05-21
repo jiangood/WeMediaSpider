@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout
 from qfluentwidgets import (
     TitleLabel, BodyLabel, PrimaryPushButton, PushButton,
     ComboBox, LineEdit, InfoBar, InfoBarPosition,
@@ -21,7 +21,7 @@ class AccountEditDialog(QDialog):
     def _setup_window(self):
         title = "编辑公众号" if self.mode == 'edit' else "添加公众号"
         self.setWindowTitle(title)
-        self.setFixedSize(400, 220)
+        self.setFixedSize(400, 240)
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: #1a1a1a;
@@ -33,36 +33,24 @@ class AccountEditDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         title = TitleLabel(self.windowTitle())
         layout.addWidget(title)
 
-        form_layout = QVBoxLayout()
-        form_layout.setSpacing(8)
-
         name_label = BodyLabel("公众号名称")
-        form_layout.addWidget(name_label)
+        layout.addWidget(name_label)
 
+        self.name_input = LineEdit()
         if self.mode == 'add':
-            self.name_input = LineEdit()
             self.name_input.setPlaceholderText("输入公众号名称")
-            form_layout.addWidget(self.name_input)
         else:
-            self.name_label_readonly = BodyLabel(self.account_data.get('name', ''))
-            self.name_label_readonly.setStyleSheet(f"""
-                BodyLabel {{
-                    background-color: #2d2d2d;
-                    color: #aaa;
-                    padding: 6px 12px;
-                    border: 1px solid {COLORS['border']};
-                    border-radius: 4px;
-                }}
-            """)
-            form_layout.addWidget(self.name_label_readonly)
+            self.name_input.setText(self.account_data.get('name', ''))
+            self.name_input.setReadOnly(True)
+        layout.addWidget(self.name_input)
 
         range_label = BodyLabel("时间范围")
-        form_layout.addWidget(range_label)
+        layout.addWidget(range_label)
 
         self.date_combo = ComboBox()
         self.date_combo.addItems(self.DATE_RANGES)
@@ -70,9 +58,8 @@ class AccountEditDialog(QDialog):
             current_range = self.account_data.get('date_range', '最近7天')
             if current_range in self.DATE_RANGES:
                 self.date_combo.setCurrentIndex(self.DATE_RANGES.index(current_range))
-        form_layout.addWidget(self.date_combo)
+        layout.addWidget(self.date_combo)
 
-        layout.addLayout(form_layout)
         layout.addStretch()
 
         btn_layout = QHBoxLayout()
