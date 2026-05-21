@@ -38,12 +38,6 @@ import sys
 DARK_THEME_STYLESHEET = """
 /* 全局暗黑主题样式 */
 
-/* 主窗口和所有QWidget背景 */
-QWidget {
-    background-color: #1a1a1a;
-    color: #ffffff;
-}
-
 /* FluentWindow 内部组件强制暗黑背景 */
 FluentWindow, FluentWindow > QWidget {
     background-color: #1a1a1a;

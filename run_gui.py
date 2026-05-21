@@ -69,6 +69,9 @@ def check_basic_dependencies():
     在开发环境中检查必要的第三方库，打包环境中跳过检查
     （因为打包时已经包含了所有依赖）。
     
+    使用 importlib.util.find_spec 快速检查模块是否存在，
+    避免完整加载模块，加快启动速度。
+    
     Returns:
         bool: 所有依赖都已安装返回 True，否则返回 False
     """
@@ -76,10 +79,11 @@ def check_basic_dependencies():
     if is_frozen():
         return True
     
+    from importlib.util import find_spec
+    
     missing = []
     
     # 依赖列表：(模块名, pip包名)
-    # 模块名用于 import 检查，pip包名用于安装提示
     deps = [
         ('PyQt6', 'PyQt6'),
         ('selenium', 'selenium'),
@@ -92,9 +96,7 @@ def check_basic_dependencies():
     
     # 逐个检查依赖
     for module, package in deps:
-        try:
-            __import__(module)
-        except ImportError:
+        if find_spec(module) is None:
             missing.append(package)
     
     # 输出缺失的依赖
@@ -194,6 +196,9 @@ def main():
     
     window = MainWindow()
     window.show()
+    
+    from PyQt6.QtCore import QTimer
+    QTimer.singleShot(0, window._start_background_tasks)
     
     # 进入 Qt 事件循环，直到窗口关闭
     sys.exit(app.exec())
