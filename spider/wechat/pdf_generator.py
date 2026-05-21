@@ -71,8 +71,8 @@ def _download_images(markdown_text, image_dir):
             logger.warning(f"下载图片失败: {url[:60]}... {e}")
             return match.group(0)
 
-    html = _md_to_html(markdown_text)
-    html = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _replace_img, html)
+    processed = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _replace_img, markdown_text)
+    html = _md_to_html(processed)
     return html
 
 
