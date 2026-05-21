@@ -20,14 +20,12 @@ GUI 页面模块
     4. 支持屏幕自适应，在不同分辨率下都有良好体验
 """
 
-from .welcome_page import WelcomePage
 from .login_page import LoginPage
 from .unified_scrape_page import UnifiedScrapePage
 from .results_page import ResultsPage
 from .settings_page import SettingsPage
 
 __all__ = [
-    'WelcomePage',
     'LoginPage',
     'UnifiedScrapePage',
     'ResultsPage',

@@ -31,7 +31,7 @@ from qfluentwidgets import (
     setTheme, Theme, SplashScreen
 )
 
-from .pages import WelcomePage, LoginPage, UnifiedScrapePage, ResultsPage, SettingsPage
+from .pages import LoginPage, UnifiedScrapePage, ResultsPage, SettingsPage
 from .app import apply_label_transparent_background
 
 
@@ -42,7 +42,6 @@ class MainWindow(FluentWindow):
     包含侧边导航栏和多个功能页面，支持页面间的信号通信和数据传递。
     
     页面列表:
-        - welcome_page: 欢迎页面，显示应用介绍和快速入口
         - login_page: 登录页面，管理微信登录状态
         - scrape_page: 爬取页面，配置和执行公众号爬取任务
         - results_page: 结果页面，查看、搜索和导出爬取结果
@@ -203,7 +202,6 @@ class MainWindow(FluentWindow):
         爬取页面需要传入登录管理器以获取登录凭证。
         创建完成后会延迟应用标签透明背景。
         """
-        self.welcome_page = WelcomePage(self)
         self.login_page = LoginPage(self)
         self.results_page = ResultsPage(self)
         self.scrape_page = UnifiedScrapePage(
@@ -220,7 +218,6 @@ class MainWindow(FluentWindow):
         遍历所有页面，处理 qfluentwidgets 标签组件的背景透明问题。
         """
         pages = [
-            self.welcome_page,
             self.login_page,
             self.results_page,
             self.scrape_page,
@@ -274,10 +271,6 @@ class MainWindow(FluentWindow):
         将所有页面添加到导航栏，设置图标和显示名称。
         设置页面放置在底部位置。
         """
-        self.addSubInterface(
-            self.welcome_page, FluentIcon.HOME, "欢迎"
-        )
-        
         self.addSubInterface(
             self.login_page, FluentIcon.FINGERPRINT, "账号登录"
         )
