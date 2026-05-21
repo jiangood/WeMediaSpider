@@ -173,12 +173,13 @@ class ArticlesPage(ScrollArea):
         layout.addWidget(filter_card)
 
         self.data_table = FluentTable()
-        self.data_table.setColumnCount(4)
-        self.data_table.setHorizontalHeaderLabels(["公众号", "标题", "匹配内容", "发布时间"])
+        self.data_table.setColumnCount(5)
+        self.data_table.setHorizontalHeaderLabels(["公众号", "标题", "匹配内容", "发布时间", "状态"])
         self.data_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.data_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.data_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.data_table.setColumnWidth(2, 200)
         self.data_table.itemSelectionChanged.connect(self._on_selection_changed)
         self.data_table.doubleClicked.connect(self._on_table_double_clicked)
@@ -235,7 +236,8 @@ class ArticlesPage(ScrollArea):
                 '标题': row.get('title', ''),
                 '发布时间': row.get('publish_time', ''),
                 '链接': row.get('link', ''),
-                '内容': row.get('content', '') or ''
+                '内容': row.get('content', '') or '',
+                'has_content': bool(row.get('has_content', False))
             })
         accounts_list = db.get_accounts()
         db.close()
@@ -279,10 +281,24 @@ class ArticlesPage(ScrollArea):
         table.setUpdatesEnabled(False)
         table.setRowCount(len(page_articles))
         for i, article in enumerate(page_articles):
-            table.setItem(i, 0, QTableWidgetItem(article.get('公众号', '')))
-            table.setItem(i, 1, QTableWidgetItem(article.get('标题', '')))
-            table.setItem(i, 2, QTableWidgetItem(page_matches[i] if i < len(page_matches) else ''))
-            table.setItem(i, 3, QTableWidgetItem(article.get('发布时间', '')))
+            item0 = QTableWidgetItem(article.get('公众号', ''))
+            item0.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(i, 0, item0)
+            item1 = QTableWidgetItem(article.get('标题', ''))
+            item1.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(i, 1, item1)
+            item2 = QTableWidgetItem(page_matches[i] if i < len(page_matches) else '')
+            item2.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(i, 2, item2)
+            item3 = QTableWidgetItem(article.get('发布时间', ''))
+            item3.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            table.setItem(i, 3, item3)
+            has_content = article.get('has_content', False)
+            status_item = QTableWidgetItem("已爬取" if has_content else "未爬取")
+            status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if has_content:
+                status_item.setForeground(Qt.GlobalColor.darkGreen)
+            table.setItem(i, 4, status_item)
         table.setUpdatesEnabled(True)
         table.setSortingEnabled(True)
         self.count_label.setText(f"共 {self._total_count} 条记录")
@@ -308,7 +324,8 @@ class ArticlesPage(ScrollArea):
                     '标题': row.get('title', ''),
                     '发布时间': row.get('publish_time', ''),
                     '链接': row.get('link', ''),
-                    '内容': row.get('content', '') or ''
+                    '内容': row.get('content', '') or '',
+                    'has_content': bool(row.get('has_content', False))
                 })
             self.source_info = "数据库"
             self._apply_local_filter(all_articles)
@@ -329,7 +346,8 @@ class ArticlesPage(ScrollArea):
                     '标题': row.get('title', ''),
                     '发布时间': row.get('publish_time', ''),
                     '链接': row.get('link', ''),
-                    '内容': row.get('content', '') or ''
+                    '内容': row.get('content', '') or '',
+                    'has_content': bool(row.get('has_content', False))
                 })
             self._apply_local_filter(all_articles)
         else:
@@ -507,6 +525,15 @@ class ArticlesPage(ScrollArea):
 
         menu.addSeparator()
 
+        pdf_action = QAction("下载PDF", self)
+        pdf_action.setEnabled(article.get('has_content', False))
+        if not article.get('has_content', False):
+            pdf_action.setToolTip("文章内容未爬取，无法生成PDF")
+        pdf_action.triggered.connect(lambda r=real_row: self._on_download_pdf(r))
+        menu.addAction(pdf_action)
+
+        menu.addSeparator()
+
         delete_action = QAction("删除", self)
         delete_action.triggered.connect(lambda d=displayed_row, l=link: self._on_delete_article(d, l))
         menu.addAction(delete_action)
@@ -556,6 +583,39 @@ class ArticlesPage(ScrollArea):
         dialog = ImageExtractDialog(link, generate_pdf=False, parent=self.window())
         dialog.exec()
 
+    def _on_download_pdf(self, real_row):
+        if real_row >= len(self.articles):
+            return
+        article = self.articles[real_row]
+        title = article.get('标题', '')
+        account = article.get('公众号', '')
+        content = article.get('内容', '')
+        if not content:
+            if not article.get('链接'):
+                InfoBar.error(title="下载失败", content="文章内容为空且无链接", parent=self, position=InfoBarPosition.TOP, duration=3000)
+                return
+            db = Database(DB_PATH)
+            row = db.conn.execute("SELECT content FROM articles WHERE link = ?", (article['链接'],)).fetchone()
+            db.close()
+            if row and row['content']:
+                content = row['content']
+                article['内容'] = content
+        if not content:
+            InfoBar.error(title="下载失败", content="文章内容为空", parent=self, position=InfoBarPosition.TOP, duration=3000)
+            return
+        from spider.wechat.pdf_generator import generate_article_pdf
+        from gui.utils import DEFAULT_OUTPUT_DIR
+        try:
+            pdf_path = generate_article_pdf(
+                article_title=title,
+                account_name=account,
+                markdown_content=content,
+                output_dir=DEFAULT_OUTPUT_DIR,
+            )
+            InfoBar.success(title="PDF已生成", content=pdf_path, parent=self, position=InfoBarPosition.TOP, duration=5000)
+        except Exception as e:
+            InfoBar.error(title="PDF生成失败", content=str(e), parent=self, position=InfoBarPosition.TOP, duration=3000)
+
     def _on_open_folder(self):
         from gui.utils import DEFAULT_OUTPUT_DIR
         results_dir = os.path.abspath(DEFAULT_OUTPUT_DIR)
@@ -568,12 +628,14 @@ class ArticlesPage(ScrollArea):
         self.articles = []
         accounts = set()
         for article in articles:
+            content = article.get('content', '') or ''
             row = {
                 '公众号': article.get('name', ''),
                 '标题': article.get('title', ''),
                 '发布时间': article.get('publish_time', ''),
                 '链接': article.get('link', ''),
-                '内容': article.get('content', '') or ''
+                '内容': content,
+                'has_content': bool(content)
             }
             self.articles.append(row)
             if row['公众号']:

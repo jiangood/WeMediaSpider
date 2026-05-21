@@ -84,6 +84,7 @@ class Database:
         cols = "account_name, title, publish_time, link"
         if include_content:
             cols += ", content"
+        cols += ", CASE WHEN content IS NOT NULL AND content != '' THEN 1 ELSE 0 END AS has_content"
         if account:
             rows = self.conn.execute(
                 f"SELECT {cols} FROM articles WHERE account_name = ? ORDER BY publish_time DESC",
@@ -116,6 +117,7 @@ class Database:
         cols = "account_name, title, publish_time, link"
         if include_content:
             cols += ", content"
+        cols += ", CASE WHEN content IS NOT NULL AND content != '' THEN 1 ELSE 0 END AS has_content"
         offset = max(0, (page - 1) * page_size)
         if account:
             rows = self.conn.execute(
