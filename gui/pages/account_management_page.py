@@ -148,7 +148,7 @@ class AccountManagementPage(QWidget):
             self.account_table.setRowCount(len(accounts))
             for i, acc in enumerate(accounts):
                 name_item = QTableWidgetItem(acc.get('name', ''))
-                name_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+                name_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
                 self.account_table.setItem(i, 0, name_item)
                 status = acc.get('status', '')
                 status_item = QTableWidgetItem(status_map.get(status, status))
@@ -156,16 +156,23 @@ class AccountManagementPage(QWidget):
                              'processing': COLORS['warning'], 'list_done': COLORS['success'],
                              'pending': COLORS['text_secondary']}
                 status_item.setForeground(QColor(color_map.get(status, COLORS['text_secondary'])))
+                status_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
                 self.account_table.setItem(i, 1, status_item)
-                self.account_table.setItem(i, 2, QTableWidgetItem(str(acc.get('total_articles', 0))))
-                self.account_table.setItem(i, 3, QTableWidgetItem(acc.get('date_range', '')))
+                art_item = QTableWidgetItem(str(acc.get('total_articles', 0)))
+                art_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                self.account_table.setItem(i, 2, art_item)
+                date_range_item = QTableWidgetItem(acc.get('date_range', ''))
+                date_range_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                self.account_table.setItem(i, 3, date_range_item)
                 created = acc.get('created_at', '')
                 if created:
                     try:
                         created = datetime.strptime(created, '%Y-%m-%d %H:%M:%S').strftime('%m-%d %H:%M')
                     except Exception:
                         pass
-                self.account_table.setItem(i, 4, QTableWidgetItem(created))
+                created_item = QTableWidgetItem(created)
+                created_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                self.account_table.setItem(i, 4, created_item)
                 container = QWidget()
                 btn_layout = QHBoxLayout(container)
                 btn_layout.setContentsMargins(2, 2, 2, 2)

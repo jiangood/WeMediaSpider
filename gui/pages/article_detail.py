@@ -76,7 +76,7 @@ class ArticlePreviewDialog(QDialog):
         screen = QApplication.primaryScreen()
         if screen:
             screen_size = screen.availableGeometry()
-            width = int(screen_size.width() * 0.9)
+            width = min(960, int(screen_size.width() * 0.9))
             height = int(screen_size.height() * 0.9)
             self.resize(width, height)
             x = (screen_size.width() - width) // 2
