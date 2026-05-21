@@ -31,7 +31,7 @@ from qfluentwidgets import (
     setTheme, Theme, SplashScreen
 )
 
-from .pages import LoginPage, UnifiedScrapePage, ArticlesPage, SettingsPage
+from .pages import LoginPage, AccountManagementPage, ArticlesPage, SettingsPage
 from .app import apply_label_transparent_background
 
 
@@ -204,7 +204,7 @@ class MainWindow(FluentWindow):
         """
         self.login_page = LoginPage(self)
         self.results_page = ArticlesPage(self)
-        self.scrape_page = UnifiedScrapePage(
+        self.scrape_page = AccountManagementPage(
             self.login_page.get_login_manager(), self
         )
         self.settings_page = SettingsPage(self)

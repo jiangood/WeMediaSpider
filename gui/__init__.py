@@ -13,7 +13,7 @@
     - pages/: 各功能页面的实现
         - welcome_page.py: 欢迎页面
         - login_page.py: 微信登录页面
-        - unified_scrape_page.py: 公众号爬取页面
+        - account_management_page.py: 公众号管理页面
         - articles_page.py: 文章列表页面（含搜索）
         - article_downloader.py: 文章图片下载
         - settings_page.py: 设置页面

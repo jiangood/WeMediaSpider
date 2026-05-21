@@ -9,7 +9,7 @@ GUI 页面模块
 页面列表:
     - WelcomePage: 欢迎页面，展示应用介绍和快速入门指南
     - LoginPage: 登录页面，提供微信扫码登录和凭证管理功能
-    - UnifiedScrapePage: 公众号爬取页面，配置和执行批量爬取任务
+    - AccountManagementPage: 公众号管理页面
     - ArticlesPage: 文章列表页面，预览、筛选、搜索和导出爬取结果
     - SettingsPage: 设置页面，配置应用参数和爬取选项
 
@@ -21,13 +21,13 @@ GUI 页面模块
 """
 
 from .login_page import LoginPage
-from .unified_scrape_page import UnifiedScrapePage
+from .account_management_page import AccountManagementPage
 from .articles_page import ArticlesPage
 from .settings_page import SettingsPage
 
 __all__ = [
     'LoginPage',
-    'UnifiedScrapePage',
+    'AccountManagementPage',
     'ArticlesPage',
     'SettingsPage',
 ]

@@ -17,7 +17,7 @@ from spider.database import Database
 from gui.utils import DB_PATH
 
 
-class UnifiedScrapePage(QWidget):
+class AccountManagementPage(QWidget):
     scrape_completed = pyqtSignal(list, str, str)
     account_added = pyqtSignal(str)
 
@@ -147,7 +147,9 @@ class UnifiedScrapePage(QWidget):
             }
             self.account_table.setRowCount(len(accounts))
             for i, acc in enumerate(accounts):
-                self.account_table.setItem(i, 0, QTableWidgetItem(acc.get('name', '')))
+                name_item = QTableWidgetItem(acc.get('name', ''))
+                name_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+                self.account_table.setItem(i, 0, name_item)
                 status = acc.get('status', '')
                 status_item = QTableWidgetItem(status_map.get(status, status))
                 color_map = {'completed': COLORS['success'], 'error': COLORS['error'],
