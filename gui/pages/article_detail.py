@@ -68,6 +68,12 @@ class ArticlePreviewDialog(QDialog):
         self.current_index = 0
         self._setup_ui()
         self._setup_shortcuts()
+        self._warm_up_engine()
+
+    def _warm_up_engine(self):
+        self.content_text.setHtml(
+            "<html><body style='background:#1e1e1e;'></body></html>"
+        )
 
     def _setup_ui(self):
         self.setWindowTitle("文章详情")

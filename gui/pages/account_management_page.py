@@ -145,7 +145,10 @@ class AccountManagementPage(QWidget):
                 'pending': '等待列表', 'list_done': '列表完成',
                 'processing': '处理中', 'completed': '已完成', 'error': '出错'
             }
-            self.account_table.setRowCount(len(accounts))
+            table = self.account_table
+            table.setSortingEnabled(False)
+            table.setUpdatesEnabled(False)
+            table.setRowCount(len(accounts))
             for i, acc in enumerate(accounts):
                 name_item = QTableWidgetItem(acc.get('name', ''))
                 name_item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
@@ -188,6 +191,8 @@ class AccountManagementPage(QWidget):
                     retry_btn.clicked.connect(lambda checked, n=name: self._on_retry_account(n))
                     btn_layout.addWidget(retry_btn)
                 self.account_table.setCellWidget(i, 5, container)
+            table.setUpdatesEnabled(True)
+            table.setSortingEnabled(True)
         finally:
             db.close()
 

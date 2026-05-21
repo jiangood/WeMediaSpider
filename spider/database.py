@@ -76,17 +76,24 @@ class Database:
         self.conn.commit()
         return count
 
-    def get_articles(self, account: Optional[str] = None) -> List[Dict]:
+    def get_articles(self, account: Optional[str] = None, include_content: bool = True) -> List[Dict]:
+        cols = "account_name, title, publish_time, link"
+        if include_content:
+            cols += ", content"
         if account:
             rows = self.conn.execute(
-                "SELECT account_name, title, publish_time, link, content FROM articles WHERE account_name = ? ORDER BY publish_time DESC",
+                f"SELECT {cols} FROM articles WHERE account_name = ? ORDER BY publish_time DESC",
                 (account,)
             ).fetchall()
         else:
             rows = self.conn.execute(
-                "SELECT account_name, title, publish_time, link, content FROM articles ORDER BY publish_time DESC"
+                f"SELECT {cols} FROM articles ORDER BY publish_time DESC"
             ).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in rows]
+        if not include_content:
+            for r in result:
+                r['content'] = ''
+        return result
 
     def get_accounts(self) -> List[str]:
         rows = self.conn.execute(

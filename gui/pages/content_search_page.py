@@ -624,32 +624,35 @@ class ContentSearchPage(QWidget):
     
     def _display_results(self):
         """显示搜索结果"""
-        self.result_table.setRowCount(0)
-        
-        total_matches = sum(r['match_count'] for r in self.search_results)
+        total_rows = sum(len(r['matches']) for r in self.search_results)
         self.result_count_label.setText(
-            f"搜索结果: {len(self.search_results)} 篇文章, {total_matches} 处匹配"
+            f"搜索结果: {len(self.search_results)} 篇文章, {total_rows} 处匹配"
         )
+        
+        table = self.result_table
+        table.setSortingEnabled(False)
+        table.setUpdatesEnabled(False)
+        table.setRowCount(total_rows)
         
         row_index = 0
         for result in self.search_results:
             article = result['article']
             for match_info in result['matches']:
-                self.result_table.insertRow(row_index)
-                
                 account = article.get('公众号', '') or article.get('name', '')
-                self.result_table.setItem(row_index, 0, QTableWidgetItem(account))
+                table.setItem(row_index, 0, QTableWidgetItem(account))
                 
                 title = article.get('标题', '') or article.get('title', '')
-                self.result_table.setItem(row_index, 1, QTableWidgetItem(title))
+                table.setItem(row_index, 1, QTableWidgetItem(title))
                 
-                self.result_table.setItem(row_index, 2, QTableWidgetItem(match_info['match']))
+                table.setItem(row_index, 2, QTableWidgetItem(match_info['match']))
                 
                 pub_time = article.get('发布时间', '') or article.get('publish_time', '')
-                self.result_table.setItem(row_index, 3, QTableWidgetItem(pub_time))
+                table.setItem(row_index, 3, QTableWidgetItem(pub_time))
                 
                 row_index += 1
         
+        table.setUpdatesEnabled(True)
+        table.setSortingEnabled(True)
         self.export_btn.setEnabled(len(self.search_results) > 0)
     
     def _on_context_menu(self, pos):

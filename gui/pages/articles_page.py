@@ -20,7 +20,7 @@
 """
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QHeaderView, QTableWidgetItem, QAbstractItemView, QMenu, QApplication, QMessageBox
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 from PyQt6.QtGui import QDesktopServices, QAction
 import os
 import re
@@ -119,11 +119,11 @@ class ArticlesPage(ScrollArea):
         """)
 
         self._setup_ui()
-        self._load_from_db()
+        QTimer.singleShot(1500, self._warmup_preview_dialog)
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._load_from_db(silent=True)
+        QTimer.singleShot(0, lambda: self._load_from_db(silent=True) if self.isVisible() else None)
 
     def _setup_ui(self):
         self.setWidgetResizable(True)
@@ -187,11 +187,12 @@ class ArticlesPage(ScrollArea):
         layout.addLayout(btn_layout)
 
     def _load_from_db(self, account=None, source_info="数据库", silent=False):
+        has_search = bool(self.search_input.text().strip())
         db = Database(DB_PATH)
         if account:
-            rows = db.get_articles(account)
+            rows = db.get_articles(account, include_content=has_search)
         else:
-            rows = db.get_articles()
+            rows = db.get_articles(include_content=has_search)
         db.close()
 
         if not rows:
@@ -226,15 +227,22 @@ class ArticlesPage(ScrollArea):
             InfoBar.success(title="数据已加载", content=f"共 {len(self.articles)} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
     def _display_articles(self, articles, match_texts):
-        self.data_table.setRowCount(len(articles))
+        table = self.data_table
+        table.setSortingEnabled(False)
+        table.setUpdatesEnabled(False)
+        table.setRowCount(len(articles))
         for i, article in enumerate(articles):
-            self.data_table.setItem(i, 0, QTableWidgetItem(article.get('公众号', '')))
-            self.data_table.setItem(i, 1, QTableWidgetItem(article.get('标题', '')))
-            self.data_table.setItem(i, 2, QTableWidgetItem(match_texts[i] if i < len(match_texts) else ''))
-            self.data_table.setItem(i, 3, QTableWidgetItem(article.get('发布时间', '')))
+            table.setItem(i, 0, QTableWidgetItem(article.get('公众号', '')))
+            table.setItem(i, 1, QTableWidgetItem(article.get('标题', '')))
+            table.setItem(i, 2, QTableWidgetItem(match_texts[i] if i < len(match_texts) else ''))
+            table.setItem(i, 3, QTableWidgetItem(article.get('发布时间', '')))
+        table.setUpdatesEnabled(True)
+        table.setSortingEnabled(True)
         self.count_label.setText(f"共 {len(articles)} 条记录")
 
     def _on_search(self, text):
+        if text.strip():
+            self._ensure_content_for_articles()
         self._apply_filters()
 
     def _on_filter_changed(self, account):
@@ -285,10 +293,24 @@ class ArticlesPage(ScrollArea):
                 return
         self._on_fullscreen_preview()
 
+    def _ensure_content_for_articles(self):
+        need_load = [a for a in self.articles if not a.get('内容')]
+        if not need_load:
+            return
+        db = Database(DB_PATH)
+        rows = db.get_articles(include_content=True)
+        db.close()
+        content_map = {r['link']: r.get('content', '') for r in rows}
+        for a in self.articles:
+            if not a.get('内容'):
+                a['内容'] = content_map.get(a.get('链接', ''), '')
+
     def _on_fullscreen_preview(self):
         row = self.data_table.currentRow()
         if row < 0:
             return
+
+        self._ensure_content_for_articles()
 
         filtered = self._get_filtered_articles()
         if not filtered:
@@ -300,6 +322,11 @@ class ArticlesPage(ScrollArea):
 
         self.preview_dialog.set_articles(filtered, row)
         self.preview_dialog.exec()
+
+    def _warmup_preview_dialog(self):
+        if self.preview_dialog is None:
+            self.preview_dialog = ArticlePreviewDialog(self.window())
+            self.preview_dialog.article_changed.connect(self._on_preview_article_changed)
 
     def _on_preview_article_changed(self, index):
         if 0 <= index < self.data_table.rowCount():
