@@ -23,12 +23,12 @@
 """
 
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QWidget, QFileDialog
-from PyQt6.QtCore import Qt, QSize, QTimer, QEvent
+from PyQt6.QtCore import Qt, QSize, QEvent
 from PyQt6.QtGui import QIcon, QCloseEvent, QScreen, QResizeEvent
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon,
-    setTheme, Theme, SplashScreen
+    setTheme, Theme
 )
 
 from .pages import LoginPage, AccountManagementPage, ArticlesPage, SettingsPage
@@ -77,6 +77,9 @@ class MainWindow(FluentWindow):
         
         # 连接信号
         self._connect_signals()
+        
+        # 在窗口显示前应用标签透明背景，避免显示后回闪
+        self._apply_label_transparency()
     
     def _apply_dark_theme(self):
         """强制应用暗黑主题到所有内部组件
@@ -200,7 +203,6 @@ class MainWindow(FluentWindow):
         
         实例化各个功能页面并保存为实例属性。
         爬取页面需要传入登录管理器以获取登录凭证。
-        创建完成后会延迟应用标签透明背景。
         """
         self.login_page = LoginPage(self)
         self.results_page = ArticlesPage(self)
@@ -208,9 +210,6 @@ class MainWindow(FluentWindow):
             self.login_page.get_login_manager(), self
         )
         self.settings_page = SettingsPage(self)
-        
-        # 延迟应用标签透明背景，确保所有组件都已创建
-        QTimer.singleShot(100, self._apply_label_transparency)
     
     def _apply_label_transparency(self):
         """为所有页面的标签组件应用透明背景
