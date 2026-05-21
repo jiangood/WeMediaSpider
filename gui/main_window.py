@@ -81,6 +81,13 @@ class MainWindow(FluentWindow):
         # 在窗口显示前应用标签透明背景，避免显示后回闪
         self._apply_label_transparency()
     
+    def showEvent(self, event):
+        """重写 showEvent，跳过 Mica 效果的重新应用以避免 DWM 背景过渡闪屏"""
+        # 跳过 FluentWidget.showEvent 中 setMicaEffect 的重复调用
+        # Mica 在 __init__ 中已通过 setMicaEffectEnabled 设置
+        # 但在 showEvent 中重复调用会导致 DWM 重新评估背景产生可见过渡
+        QWidget.showEvent(self, event)
+
     def _apply_dark_theme(self):
         """强制应用暗黑主题到所有内部组件
         
@@ -224,9 +231,6 @@ class MainWindow(FluentWindow):
         ]
         for page in pages:
             apply_label_transparent_background(page)
-        
-        # 同时处理主窗口自身的标签（导航栏、标题栏等）
-        apply_label_transparent_background(self)
     
     def _connect_signals(self):
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)
