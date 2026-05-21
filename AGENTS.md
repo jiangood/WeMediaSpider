@@ -41,7 +41,7 @@ spider/
     ├── async_utils.py     # aiohttp-based (AsyncWeChatClient)
     ├── cache_codec.py     # zlib+base64 encode/decode for sharable login credentials
     ├── run.py             # WeChatSpiderRunner — high-level wrapper
-    └── pdf_generator.py   # generate_article_pdf() (weasyprint-based)
+    └── pdf_generator.py   # generate_article_pdf() (fpdf2 + BeautifulSoup)
 config.json                # {request_interval, include_content, cache_expire_hours}
 mic/                       # login.mp3, daochu.mp3, over.mp3 — must be co-located in packaged builds
 ```

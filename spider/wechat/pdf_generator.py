@@ -5,8 +5,24 @@ import re
 import hashlib
 import requests
 from datetime import datetime
+from bs4 import BeautifulSoup
+from bs4.element import Tag
+from fpdf import FPDF
 
 from spider.log.utils import logger
+
+
+def _find_cjk_font():
+    candidates = [
+        ('C:/Windows/Fonts/msyh.ttc', 0),
+        ('C:/Windows/Fonts/simhei.ttf', None),
+        ('C:/Windows/Fonts/simsun.ttc', 0),
+        ('C:/Windows/Fonts/msyhbd.ttc', 0),
+    ]
+    for path, idx in candidates:
+        if os.path.exists(path):
+            return path, idx
+    return None, None
 
 
 def _md_to_html(text):
@@ -60,6 +76,63 @@ def _download_images(markdown_text, image_dir):
     return html
 
 
+def _html_to_pdf(html, pdf_path):
+    soup = BeautifulSoup(html, 'html.parser')
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    font_path, collection_idx = _find_cjk_font()
+    if font_path:
+        pdf.add_font('CJK', '', font_path, uni=True, collection_font_number=collection_idx or 0)
+        pdf.set_font('CJK', '', 12)
+    else:
+        raise RuntimeError("未找到中文字体，PDF导出需要 Microsoft YaHei 或 SimHei 字体")
+
+    epw = pdf.w - pdf.l_margin - pdf.r_margin
+
+    for element in soup.body.children:
+        if not isinstance(element, Tag):
+            continue
+
+        if element.name == 'h1':
+            pdf.set_text_color(7, 193, 96)
+            pdf.set_font('CJK', '', 22)
+            pdf.multi_cell(0, 10, element.get_text(), align='C')
+            pdf.ln(4)
+
+        elif element.name == 'div' and 'meta' in element.get('class', []):
+            pdf.set_text_color(136, 136, 136)
+            pdf.set_font('CJK', '', 13)
+            pdf.multi_cell(0, 8, element.get_text(), align='C')
+            pdf.ln(6)
+
+        elif element.name == 'h2':
+            pdf.set_text_color(51, 51, 51)
+            pdf.set_font('CJK', '', 18)
+            pdf.multi_cell(0, 10, element.get_text(), align='L')
+            pdf.ln(3)
+
+        elif element.name == 'p':
+            pdf.set_text_color(51, 51, 51)
+            pdf.set_font('CJK', '', 12)
+            pdf.multi_cell(0, 7, element.get_text(), align='L')
+            pdf.ln(2)
+
+        elif element.name == 'img':
+            src = element.get('src', '')
+            if src.startswith('file:///'):
+                src = src[8:]
+            if os.path.exists(src):
+                try:
+                    pdf.image(src, x=pdf.l_margin, w=epw)
+                    pdf.ln(4)
+                except Exception as e:
+                    logger.warning(f"插入图片失败: {os.path.basename(src)}... {e}")
+
+    pdf.output(pdf_path)
+
+
 def generate_article_pdf(
     article_title: str,
     account_name: str,
@@ -97,8 +170,7 @@ p {{ margin: 8px 0; }}
     if progress_callback:
         progress_callback(2, 3, "正在导出PDF...")
     try:
-        from weasyprint import HTML as WeasyHTML
-        WeasyHTML(string=full_html).write_pdf(pdf_path)
+        _html_to_pdf(full_html, pdf_path)
         if progress_callback:
             progress_callback(3, 3, "PDF导出完成")
         return pdf_path
