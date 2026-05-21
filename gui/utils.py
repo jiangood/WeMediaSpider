@@ -337,6 +337,36 @@ def play_sound(sound_type: str):
         print(f"[play_sound] 未知的音效类型: {sound_type}")
 
 
+def _dark_msgbox(parent):
+    """创建一个适配暗色主题的 QMessageBox"""
+    from PyQt6.QtWidgets import QMessageBox
+    box = QMessageBox(parent)
+    box.setStyleSheet("""
+        QMessageBox { background-color: #2d2d2d; }
+        QMessageBox QLabel { color: #ffffff; font-size: 14px; min-width: 360px; }
+        QPushButton {
+            background-color: #3d3d3d; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px; padding: 6px 20px; color: #ffffff; font-size: 13px; min-width: 64px;
+        }
+        QPushButton:hover { background-color: #4d4d4d; }
+        QPushButton:pressed { background-color: #555555; }
+    """)
+    return box
+
+
+def confirm_dark(parent, title: str, text: str) -> bool:
+    """暗色主题下的确认对话框，返回 True 表示用户确认"""
+    msg = _dark_msgbox(parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setIcon(QMessageBox.Icon.Question)
+    btn_yes = msg.addButton("确定", QMessageBox.ButtonRole.YesRole)
+    msg.addButton("取消", QMessageBox.ButtonRole.NoRole)
+    msg.setDefaultButton(msg.buttons()[-1])
+    msg.exec()
+    return msg.clickedButton() == btn_yes
+
+
 def export_article_pdf(title: str, account: str, content: str, parent):
     """显示保存对话框并将文章导出为PDF
 
@@ -375,22 +405,8 @@ def export_article_pdf(title: str, account: str, content: str, parent):
         parent=parent,
     )
 
-    def _make_msgbox():
-        box = QMessageBox(parent)
-        box.setStyleSheet("""
-            QMessageBox { background-color: #2d2d2d; }
-            QMessageBox QLabel { color: #ffffff; font-size: 14px; min-width: 360px; }
-            QPushButton {
-                background-color: #3d3d3d; border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 4px; padding: 6px 20px; color: #ffffff; font-size: 13px;
-            }
-            QPushButton:hover { background-color: #4d4d4d; }
-            QPushButton:pressed { background-color: #555555; }
-        """)
-        return box
-
     def _on_pdf_done(fp):
-        msg = _make_msgbox()
+        msg = _dark_msgbox(parent)
         msg.setWindowTitle("PDF导出成功")
         msg.setText(f"PDF已保存到:\n{fp}")
         msg.setIcon(QMessageBox.Icon.Information)
@@ -405,7 +421,7 @@ def export_article_pdf(title: str, account: str, content: str, parent):
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(fp)))
 
     def _on_pdf_error(err):
-        msg = _make_msgbox()
+        msg = _dark_msgbox(parent)
         msg.setWindowTitle("PDF导出失败")
         msg.setText(str(err))
         msg.setIcon(QMessageBox.Icon.Critical)

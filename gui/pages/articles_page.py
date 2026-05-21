@@ -541,13 +541,9 @@ class ArticlesPage(ScrollArea):
         menu.exec(self.data_table.viewport().mapToGlobal(pos))
 
     def _on_delete_article(self, row, link):
-        reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除文章「{self.data_table.item(row, 1).text()}」吗？\n此操作不可恢复。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        from gui.utils import confirm_dark
+        if not confirm_dark(self, "确认删除",
+                            f"确定要删除文章「{self.data_table.item(row, 1).text()}」吗？\n此操作不可恢复。"):
             return
 
         title = self.data_table.item(row, 1).text()
