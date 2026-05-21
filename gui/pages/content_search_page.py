@@ -651,15 +651,23 @@ class ContentSearchPage(QWidget):
             article = result['article']
             for match_info in result['matches']:
                 account = article.get('公众号', '') or article.get('name', '')
-                table.setItem(row_index, 0, QTableWidgetItem(account))
+                item0 = QTableWidgetItem(account)
+                item0.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_index, 0, item0)
                 
                 title = article.get('标题', '') or article.get('title', '')
-                table.setItem(row_index, 1, QTableWidgetItem(title))
+                item1 = QTableWidgetItem(title)
+                item1.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_index, 1, item1)
                 
-                table.setItem(row_index, 2, QTableWidgetItem(match_info['match']))
+                item2 = QTableWidgetItem(match_info['match'])
+                item2.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_index, 2, item2)
                 
                 pub_time = article.get('发布时间', '') or article.get('publish_time', '')
-                table.setItem(row_index, 3, QTableWidgetItem(pub_time))
+                item3 = QTableWidgetItem(pub_time)
+                item3.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row_index, 3, item3)
                 
                 row_index += 1
         
