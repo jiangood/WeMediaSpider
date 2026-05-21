@@ -31,7 +31,7 @@ from qfluentwidgets import (
     setTheme, Theme, SplashScreen
 )
 
-from .pages import LoginPage, UnifiedScrapePage, ResultsPage, SettingsPage
+from .pages import LoginPage, UnifiedScrapePage, ArticlesPage, SettingsPage
 from .app import apply_label_transparent_background
 
 
@@ -44,7 +44,7 @@ class MainWindow(FluentWindow):
     页面列表:
         - login_page: 登录页面，管理微信登录状态
         - scrape_page: 爬取页面，配置和执行公众号爬取任务
-        - results_page: 结果页面，查看、搜索和导出爬取结果
+        - articles_page: 文章列表页面，查看、搜索和导出爬取结果
         - settings_page: 设置页面，配置应用参数
     
     Attributes:
@@ -203,7 +203,7 @@ class MainWindow(FluentWindow):
         创建完成后会延迟应用标签透明背景。
         """
         self.login_page = LoginPage(self)
-        self.results_page = ResultsPage(self)
+        self.results_page = ArticlesPage(self)
         self.scrape_page = UnifiedScrapePage(
             self.login_page.get_login_manager(), self
         )
@@ -228,7 +228,6 @@ class MainWindow(FluentWindow):
     
     def _connect_signals(self):
         self.scrape_page.scrape_completed.connect(self._on_scrape_completed)
-        self.results_page.data_discarded.connect(self._on_data_discarded)
         self.settings_page.settings_changed.connect(self._on_settings_changed)
 
         from .workers import BackgroundScrapeDaemon
@@ -243,7 +242,7 @@ class MainWindow(FluentWindow):
         self.processing_indicator = ProcessingIndicator(self)
         self.processing_indicator.show()
 
-        self.scrape_page.account_added.connect(lambda name: None)
+        self.scrape_page.account_added.connect(lambda name: self.daemon.wake())
     
     def _on_settings_changed(self, config: dict):
         self.scrape_page.apply_settings(config)
@@ -252,9 +251,6 @@ class MainWindow(FluentWindow):
         self.results_page.load_articles_data(articles, source_info)
         self.switchTo(self.results_page)
     
-    def _on_data_discarded(self):
-        self.switchTo(self.scrape_page)
-
     def _on_daemon_log(self, message: str):
         self.scrape_page.append_log(message)
 

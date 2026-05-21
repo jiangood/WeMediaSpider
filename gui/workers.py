@@ -50,6 +50,7 @@ class BackgroundScrapeDaemon(QThread):
         super().__init__(parent)
         self.login_manager = login_manager
         self.is_running = True
+        self._wake_flag = False
         self.request_interval = 10
         self._load_config()
 
@@ -61,6 +62,9 @@ class BackgroundScrapeDaemon(QThread):
                 self.request_interval = int(cfg.get('request_interval', 10))
         except Exception:
             pass
+
+    def wake(self):
+        self._wake_flag = True
 
     def stop(self):
         self.is_running = False
@@ -204,6 +208,10 @@ class BackgroundScrapeDaemon(QThread):
                 self._log("等待新任务...")
                 for _ in range(300):
                     if not self.is_running:
+                        break
+                    if self._wake_flag:
+                        self._wake_flag = False
+                        self._log("收到新任务信号")
                         break
                     self.msleep(100)
 
