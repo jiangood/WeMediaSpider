@@ -603,18 +603,8 @@ class ArticlesPage(ScrollArea):
         if not content:
             InfoBar.error(title="下载失败", content="文章内容为空", parent=self, position=InfoBarPosition.TOP, duration=3000)
             return
-        from spider.wechat.pdf_generator import generate_article_pdf
-        from gui.utils import DEFAULT_OUTPUT_DIR
-        try:
-            pdf_path = generate_article_pdf(
-                article_title=title,
-                account_name=account,
-                markdown_content=content,
-                output_dir=DEFAULT_OUTPUT_DIR,
-            )
-            InfoBar.success(title="PDF已生成", content=pdf_path, parent=self, position=InfoBarPosition.TOP, duration=5000)
-        except Exception as e:
-            InfoBar.error(title="PDF生成失败", content=str(e), parent=self, position=InfoBarPosition.TOP, duration=3000)
+        from gui.utils import export_article_pdf
+        export_article_pdf(title=title, account=account, content=content, parent=self)
 
     def _on_open_folder(self):
         from gui.utils import DEFAULT_OUTPUT_DIR

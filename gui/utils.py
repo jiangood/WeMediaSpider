@@ -32,6 +32,7 @@ GUI 工具函数模块
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 from PyQt6.QtCore import QUrl
@@ -334,3 +335,69 @@ def play_sound(sound_type: str):
         player.play(sound_file)
     else:
         print(f"[play_sound] 未知的音效类型: {sound_type}")
+
+
+def export_article_pdf(title: str, account: str, content: str, parent):
+    """显示保存对话框并将文章导出为PDF
+
+    选择保存路径后异步生成PDF，完成后弹出对话框询问是否打开文件/文件夹。
+
+    Args:
+        title: 文章标题
+        account: 公众号名称
+        content: Markdown 正文内容
+        parent: 父窗口（用于居中对话框）
+
+    Returns:
+        PdfExportWorker 或 None（用户取消时）
+    """
+    from PyQt6.QtCore import QStandardPaths
+    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+    from PyQt6.QtGui import QDesktopServices
+
+    safe_title = re.sub(r'[\\/:*?"<>|]', '', title).strip()[:100] or 'untitled'
+    safe_account = re.sub(r'[\\/:*?"<>|]', '', account).strip()[:50] or 'unknown'
+    default_name = f"{safe_account}_{safe_title}.pdf"
+    desktop = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation)
+    file_path, _ = QFileDialog.getSaveFileName(
+        parent, "导出PDF", os.path.join(desktop, default_name), "PDF文件 (*.pdf)"
+    )
+    if not file_path:
+        return None
+
+    from gui.pages.article_downloader import PdfExportWorker
+    worker = PdfExportWorker(
+        article_title=title,
+        account_name=account,
+        markdown_content=content,
+        output_dir=os.path.dirname(file_path),
+        file_path=file_path,
+        parent=parent,
+    )
+
+    def _on_pdf_done(fp):
+        msg = QMessageBox(parent)
+        msg.setWindowTitle("PDF导出成功")
+        msg.setText(f"PDF已保存到:\n{fp}")
+        msg.setIcon(QMessageBox.Icon.Information)
+        btn_open = msg.addButton("打开文件", QMessageBox.ButtonRole.ActionRole)
+        btn_folder = msg.addButton("打开所在文件夹", QMessageBox.ButtonRole.ActionRole)
+        btn_close = msg.addButton("关闭", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_close)
+        msg.exec()
+        if msg.clickedButton() == btn_open:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(fp))
+        elif msg.clickedButton() == btn_folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(fp)))
+
+    def _on_pdf_error(err):
+        msg = QMessageBox(parent)
+        msg.setWindowTitle("PDF导出失败")
+        msg.setText(str(err))
+        msg.setIcon(QMessageBox.Icon.Critical)
+        msg.exec()
+
+    worker.pdf_export_success.connect(_on_pdf_done)
+    worker.pdf_export_failed.connect(_on_pdf_error)
+    worker.start()
+    return worker
