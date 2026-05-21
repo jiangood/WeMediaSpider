@@ -300,42 +300,56 @@ p {{ margin: 8px 0; }}
         account = article.get('公众号', '')
         content = article.get('内容', '')
 
+        from PyQt6.QtCore import QStandardPaths
         from PyQt6.QtWidgets import QFileDialog
         safe_title = ''.join(c for c in title if c not in r'\/:*?"<>|')[:100] or 'untitled'
         safe_account = ''.join(c for c in account if c not in r'\/:*?"<>|')[:50] or 'unknown'
         default_name = f"{safe_account}_{safe_title}.pdf"
+        desktop = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DesktopLocation)
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出PDF", default_name, "PDF文件 (*.pdf)"
+            self, "导出PDF", os.path.join(desktop, default_name), "PDF文件 (*.pdf)"
         )
         if not file_path:
             return
 
-        from spider.wechat.pdf_generator import generate_article_pdf
-        try:
-            pdf_path = generate_article_pdf(
-                article_title=title,
-                account_name=account,
-                markdown_content=content,
-                output_dir=os.path.dirname(file_path),
-            )
-            import shutil
-            if pdf_path != file_path:
-                shutil.move(pdf_path, file_path)
-            InfoBar.success(
-                title="PDF导出成功",
-                content=f"已保存到 {file_path}",
-                parent=self,
-                position=InfoBarPosition.TOP,
-                duration=3000
-            )
-        except Exception as e:
-            InfoBar.error(
-                title="PDF导出失败",
-                content=str(e),
-                parent=self,
-                position=InfoBarPosition.TOP,
-                duration=5000
-            )
+        from gui.pages.article_downloader import PdfExportWorker
+        self.download_pdf_btn.setEnabled(False)
+        self.download_pdf_btn.setText("导出中...")
+
+        self._pdf_worker = PdfExportWorker(
+            article_title=title,
+            account_name=account,
+            markdown_content=content,
+            output_dir=os.path.dirname(file_path),
+            file_path=file_path,
+        )
+        self._pdf_worker.pdf_export_success.connect(lambda fp: self._on_pdf_export_done(fp))
+        self._pdf_worker.pdf_export_failed.connect(lambda err: self._on_pdf_export_failed(err))
+        self._pdf_worker.start()
+
+    def _on_pdf_export_done(self, file_path):
+        self.download_pdf_btn.setEnabled(True)
+        self.download_pdf_btn.setText("下载PDF")
+        self._pdf_worker = None
+        InfoBar.success(
+            title="PDF导出成功",
+            content=f"已保存到 {file_path}",
+            parent=self,
+            position=InfoBarPosition.TOP,
+            duration=3000
+        )
+
+    def _on_pdf_export_failed(self, error):
+        self.download_pdf_btn.setEnabled(True)
+        self.download_pdf_btn.setText("下载PDF")
+        self._pdf_worker = None
+        InfoBar.error(
+            title="PDF导出失败",
+            content=error,
+            parent=self,
+            position=InfoBarPosition.TOP,
+            duration=5000
+        )
 
 
 class ImageExtractDialog(QDialog):

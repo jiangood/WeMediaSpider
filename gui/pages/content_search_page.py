@@ -503,9 +503,21 @@ class ContentSearchPage(QWidget):
         })
     
     def _load_from_db(self):
-        db = Database(DB_PATH)
-        self.articles = db.get_articles()
-        db.close()
+        from PyQt6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.data_status_label.setText("正在加载...")
+            QApplication.processEvents()
+            db = Database(DB_PATH)
+            self.articles = []
+            rows = db.get_articles()
+            for row in rows:
+                self.articles.append(row)
+                if len(self.articles) % 500 == 0:
+                    QApplication.processEvents()
+            db.close()
+        finally:
+            QApplication.restoreOverrideCursor()
 
         self.current_file = None
         self.data_status_label.setText(f"已加载 {len(self.articles)} 篇")

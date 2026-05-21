@@ -1322,10 +1322,36 @@ class ArticleImagePage(QWidget):
         self.status_label.setStyleSheet(f"color: {COLORS['success']};")
     
     def set_article_url(self, url: str):
-        """设置文章链接（供外部调用）
-        
-        Args:
-            url: 文章链接
-        """
         self.url_input.setText(url)
         self.url_input.setFocus()
+
+
+class PdfExportWorker(QThread):
+    pdf_export_success = pyqtSignal(str)
+    pdf_export_failed = pyqtSignal(str)
+
+    def __init__(self, article_title, account_name, markdown_content, output_dir, file_path, parent=None):
+        super().__init__(parent)
+        self.article_title = article_title
+        self.account_name = account_name
+        self.markdown_content = markdown_content
+        self.output_dir = output_dir
+        self.file_path = file_path
+
+    def run(self):
+        try:
+            from spider.wechat.pdf_generator import generate_article_pdf
+            pdf_path = generate_article_pdf(
+                article_title=self.article_title,
+                account_name=self.account_name,
+                markdown_content=self.markdown_content,
+                output_dir=self.output_dir,
+            )
+            import shutil
+            if pdf_path != self.file_path:
+                shutil.move(pdf_path, self.file_path)
+            self.pdf_export_success.emit(self.file_path)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.pdf_export_failed.emit(str(e))

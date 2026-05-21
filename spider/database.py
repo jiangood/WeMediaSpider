@@ -55,6 +55,10 @@ class Database:
                 INSERT INTO articles_fts(rowid, title, content)
                 VALUES (new.id, new.title, new.content);
             END;
+
+            CREATE INDEX IF NOT EXISTS idx_articles_account_name ON articles(account_name);
+            CREATE INDEX IF NOT EXISTS idx_articles_publish_time ON articles(publish_time);
+            CREATE INDEX IF NOT EXISTS idx_wechat_account_status ON wechat_account(status);
         """)
         self.conn.commit()
 
@@ -101,9 +105,33 @@ class Database:
         ).fetchall()
         return [r['account_name'] for r in rows]
 
-    def get_articles_count(self) -> int:
-        row = self.conn.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
+    def get_articles_count(self, account: Optional[str] = None) -> int:
+        if account:
+            row = self.conn.execute("SELECT COUNT(*) AS cnt FROM articles WHERE account_name = ?", (account,)).fetchone()
+        else:
+            row = self.conn.execute("SELECT COUNT(*) AS cnt FROM articles").fetchone()
         return row['cnt']
+
+    def get_articles_page(self, page: int = 1, page_size: int = 50, account: Optional[str] = None, include_content: bool = False) -> List[Dict]:
+        cols = "account_name, title, publish_time, link"
+        if include_content:
+            cols += ", content"
+        offset = max(0, (page - 1) * page_size)
+        if account:
+            rows = self.conn.execute(
+                f"SELECT {cols} FROM articles WHERE account_name = ? ORDER BY publish_time DESC LIMIT ? OFFSET ?",
+                (account, page_size, offset)
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                f"SELECT {cols} FROM articles ORDER BY publish_time DESC LIMIT ? OFFSET ?",
+                (page_size, offset)
+            ).fetchall()
+        result = [dict(r) for r in rows]
+        if not include_content:
+            for r in result:
+                r['content'] = ''
+        return result
 
     def get_existing_links(self) -> set:
         rows = self.conn.execute("SELECT link FROM articles").fetchall()

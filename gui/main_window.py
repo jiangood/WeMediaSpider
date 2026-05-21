@@ -255,7 +255,7 @@ class MainWindow(FluentWindow):
         self.scrape_page.append_log(message)
 
     def _on_account_status_changed(self, account_name: str, status: str):
-        self.scrape_page._refresh_table()
+        self.scrape_page._update_account_row(account_name, status)
 
     def _on_phase_changed(self, phase: str):
         labels = {'idle': '就绪', 'list': '爬取列表中', 'content': '爬取内容中', 'error': '出错'}
@@ -293,5 +293,5 @@ class MainWindow(FluentWindow):
     def closeEvent(self, event: QCloseEvent):
         if hasattr(self, 'daemon'):
             self.daemon.stop()
-            self.daemon.wait(3000)
+            self.daemon.wait(1000)
         event.accept()

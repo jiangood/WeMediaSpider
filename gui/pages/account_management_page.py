@@ -212,6 +212,39 @@ class AccountManagementPage(QWidget):
         finally:
             db.close()
 
+    def _update_account_row(self, name, status):
+        status_map = {
+            'pending': '等待列表', 'list_done': '列表完成',
+            'processing': '处理中', 'completed': '已完成', 'error': '出错'
+        }
+        color_map = {'completed': COLORS['success'], 'error': COLORS['error'],
+                     'processing': COLORS['warning'], 'list_done': COLORS['success'],
+                     'pending': COLORS['text_secondary']}
+        table = self.account_table
+        for row in range(table.rowCount()):
+            item = table.item(row, 0)
+            if item and item.text() == name:
+                new_item = QTableWidgetItem(status_map.get(status, status))
+                new_item.setForeground(QColor(color_map.get(status, COLORS['text_secondary'])))
+                new_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                table.setItem(row, 1, new_item)
+                if status == 'error':
+                    container = QWidget()
+                    btn_layout = QHBoxLayout(container)
+                    btn_layout.setContentsMargins(2, 2, 2, 2)
+                    btn_layout.setSpacing(4)
+                    del_btn = PushButton("删除")
+                    del_btn.setFixedSize(50, 26)
+                    del_btn.clicked.connect(lambda checked, n=name: self._on_delete_account(n))
+                    btn_layout.addWidget(del_btn)
+                    retry_btn = PushButton("重试")
+                    retry_btn.setFixedSize(50, 26)
+                    retry_btn.clicked.connect(lambda checked, n=name: self._on_retry_account(n))
+                    btn_layout.addWidget(retry_btn)
+                    table.setCellWidget(row, 5, container)
+                return
+        self._refresh_table()
+
     def append_log(self, message: str):
         self.log_text.append(message)
         scrollbar = self.log_text.verticalScrollBar()

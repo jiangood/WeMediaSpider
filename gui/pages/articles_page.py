@@ -105,6 +105,12 @@ class ArticlesPage(ScrollArea):
 
         self.articles = []
         self.source_info = ""
+        self._page_size = 50
+        self._current_page = 1
+        self._total_pages = 1
+        self._total_count = 0
+        self._search_mode = False
+        self._all_match_texts = []
 
         self.setObjectName("resultsPage")
 
@@ -143,7 +149,11 @@ class ArticlesPage(ScrollArea):
         row1.addWidget(BodyLabel("搜索"))
         self.search_input = LineEdit()
         self.search_input.setPlaceholderText("关键词搜索标题和正文...")
-        self.search_input.textChanged.connect(self._on_search)
+        self._search_timer = QTimer()
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._on_search)
+        self.search_input.textChanged.connect(self._on_search_text_changed)
         self.search_input.setMaximumWidth(280)
         row1.addWidget(self.search_input)
 
@@ -177,6 +187,23 @@ class ArticlesPage(ScrollArea):
         self.data_table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.data_table, 1)
 
+        pagination_layout = QHBoxLayout()
+        pagination_layout.setSpacing(8)
+        pagination_layout.addStretch()
+        self.prev_page_btn = PushButton("上一页", icon=FluentIcon.LEFT_ARROW)
+        self.prev_page_btn.setFixedWidth(100)
+        self.prev_page_btn.clicked.connect(self._on_prev_page)
+        pagination_layout.addWidget(self.prev_page_btn)
+        self.page_label = BodyLabel("第 1 / 1 页")
+        self.page_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        pagination_layout.addWidget(self.page_label)
+        self.next_page_btn = PushButton("下一页", icon=FluentIcon.RIGHT_ARROW)
+        self.next_page_btn.setFixedWidth(100)
+        self.next_page_btn.clicked.connect(self._on_next_page)
+        pagination_layout.addWidget(self.next_page_btn)
+        pagination_layout.addStretch()
+        layout.addLayout(pagination_layout)
+
         self.preview_dialog = None
 
         btn_layout = QHBoxLayout()
@@ -186,73 +213,134 @@ class ArticlesPage(ScrollArea):
         btn_layout.addWidget(open_folder_btn)
         layout.addLayout(btn_layout)
 
-    def _load_from_db(self, account=None, source_info="数据库", silent=False):
-        has_search = bool(self.search_input.text().strip())
+    def _load_from_db(self, account=None, source_info="数据库", silent=False, page=None):
+        if page is not None:
+            self._current_page = page
+        self._search_mode = False
         db = Database(DB_PATH)
-        if account:
-            rows = db.get_articles(account, include_content=has_search)
-        else:
-            rows = db.get_articles(include_content=has_search)
-        db.close()
-
-        if not rows:
-            if not silent:
-                InfoBar.warning(title="提示", content="数据库中没有数据", parent=self, position=InfoBarPosition.TOP, duration=2000)
-            return
-
+        filter_acct = account if account else None
+        if filter_acct is None:
+            combo_text = self.account_filter.currentText()
+            if combo_text != "全部":
+                filter_acct = combo_text
+        self._total_count = db.get_articles_count(account=filter_acct)
+        self._total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
+        if self._current_page > self._total_pages:
+            self._current_page = self._total_pages
+        rows = db.get_articles_page(page=self._current_page, page_size=self._page_size, account=filter_acct)
         self.articles = []
-        accounts_set = set()
         for row in rows:
-            article = {
+            self.articles.append({
                 '公众号': row.get('account_name', ''),
                 '标题': row.get('title', ''),
                 '发布时间': row.get('publish_time', ''),
                 '链接': row.get('link', ''),
-                '内容': row.get('content', '')
-            }
-            self.articles.append(article)
-            if article['公众号']:
-                accounts_set.add(article['公众号'])
-
+                '内容': row.get('content', '') or ''
+            })
+        accounts_list = db.get_accounts()
+        db.close()
         self.source_info = source_info
-
+        self.account_filter.blockSignals(True)
         self.account_filter.clear()
         self.account_filter.addItem("全部")
-        for account in sorted(accounts_set):
-            self.account_filter.addItem(account)
-
-        self._apply_filters()
-
-        if not silent:
-            InfoBar.success(title="数据已加载", content=f"共 {len(self.articles)} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
+        for acct in accounts_list:
+            self.account_filter.addItem(acct)
+        if filter_acct:
+            idx = self.account_filter.findText(filter_acct)
+            if idx >= 0:
+                self.account_filter.setCurrentIndex(idx)
+        self.account_filter.blockSignals(False)
+        self._display_articles(self.articles, [''] * len(self.articles))
+        if not silent and self._total_count > 0:
+            InfoBar.success(title="数据已加载", content=f"共 {self._total_count} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
     def _display_articles(self, articles, match_texts):
+        self.articles = articles
+        self._all_match_texts = match_texts
+        if self._search_mode:
+            self._total_count = len(articles)
+            self._total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
+            if self._current_page > self._total_pages:
+                self._current_page = self._total_pages
+        self._render_page()
+
+    def _render_page(self):
+        if self._search_mode:
+            start = (self._current_page - 1) * self._page_size
+            end = start + self._page_size
+            page_articles = self.articles[start:end]
+            page_matches = self._all_match_texts[start:end]
+        else:
+            page_articles = self.articles
+            page_matches = [''] * len(page_articles)
+
         table = self.data_table
         table.setSortingEnabled(False)
         table.setUpdatesEnabled(False)
-        table.setRowCount(len(articles))
-        for i, article in enumerate(articles):
+        table.setRowCount(len(page_articles))
+        for i, article in enumerate(page_articles):
             table.setItem(i, 0, QTableWidgetItem(article.get('公众号', '')))
             table.setItem(i, 1, QTableWidgetItem(article.get('标题', '')))
-            table.setItem(i, 2, QTableWidgetItem(match_texts[i] if i < len(match_texts) else ''))
+            table.setItem(i, 2, QTableWidgetItem(page_matches[i] if i < len(page_matches) else ''))
             table.setItem(i, 3, QTableWidgetItem(article.get('发布时间', '')))
         table.setUpdatesEnabled(True)
         table.setSortingEnabled(True)
-        self.count_label.setText(f"共 {len(articles)} 条记录")
+        self.count_label.setText(f"共 {self._total_count} 条记录")
+        self.page_label.setText(f"第 {self._current_page} / {self._total_pages} 页")
+        self.prev_page_btn.setEnabled(self._current_page > 1)
+        self.next_page_btn.setEnabled(self._current_page < self._total_pages)
 
-    def _on_search(self, text):
-        if text.strip():
-            self._ensure_content_for_articles()
-        self._apply_filters()
+    def _on_search_text_changed(self, text):
+        self._search_timer.start()
+
+    def _on_search(self):
+        text = self.search_input.text().strip()
+        if text:
+            self._current_page = 1
+            self._search_mode = True
+            db = Database(DB_PATH)
+            rows = db.get_articles(include_content=True)
+            db.close()
+            all_articles = []
+            for row in rows:
+                all_articles.append({
+                    '公众号': row.get('account_name', ''),
+                    '标题': row.get('title', ''),
+                    '发布时间': row.get('publish_time', ''),
+                    '链接': row.get('link', ''),
+                    '内容': row.get('content', '') or ''
+                })
+            self.source_info = "数据库"
+            self._apply_local_filter(all_articles)
+        else:
+            self._search_mode = False
+            self._current_page = 1
+            self._load_from_db(silent=True)
 
     def _on_filter_changed(self, account):
-        self._apply_filters()
+        if self._search_mode:
+            db = Database(DB_PATH)
+            rows = db.get_articles(include_content=True)
+            db.close()
+            all_articles = []
+            for row in rows:
+                all_articles.append({
+                    '公众号': row.get('account_name', ''),
+                    '标题': row.get('title', ''),
+                    '发布时间': row.get('publish_time', ''),
+                    '链接': row.get('link', ''),
+                    '内容': row.get('content', '') or ''
+                })
+            self._apply_local_filter(all_articles)
+        else:
+            self._current_page = 1
+            self._load_from_db(silent=True)
 
-    def _apply_filters(self):
+    def _apply_local_filter(self, all_articles):
         search_text = self.search_input.text().strip().lower()
         account_filter = self.account_filter.currentText()
 
-        filtered = self.articles
+        filtered = all_articles
         if account_filter != "全部":
             filtered = [a for a in filtered if a.get('公众号', '') == account_filter]
 
@@ -298,29 +386,56 @@ class ArticlesPage(ScrollArea):
         if not need_load:
             return
         db = Database(DB_PATH)
-        rows = db.get_articles(include_content=True)
+        links = [a.get('链接', '') for a in need_load if a.get('链接')]
+        for link in links:
+            row = db.conn.execute(
+                "SELECT content FROM articles WHERE link = ?", (link,)
+            ).fetchone()
+            if row and row['content']:
+                for a in self.articles:
+                    if a.get('链接') == link and not a.get('内容'):
+                        a['内容'] = row['content']
+                        break
         db.close()
-        content_map = {r['link']: r.get('content', '') for r in rows}
-        for a in self.articles:
-            if not a.get('内容'):
-                a['内容'] = content_map.get(a.get('链接', ''), '')
+
+    def _on_prev_page(self):
+        if self._current_page > 1:
+            self._current_page -= 1
+            if self._search_mode:
+                self._render_page()
+            else:
+                self._load_from_db(silent=True, page=self._current_page)
+
+    def _on_next_page(self):
+        if self._current_page < self._total_pages:
+            self._current_page += 1
+            if self._search_mode:
+                self._render_page()
+            else:
+                self._load_from_db(silent=True, page=self._current_page)
 
     def _on_fullscreen_preview(self):
-        row = self.data_table.currentRow()
-        if row < 0:
+        displayed_row = self.data_table.currentRow()
+        if displayed_row < 0:
             return
 
         self._ensure_content_for_articles()
 
-        filtered = self._get_filtered_articles()
-        if not filtered:
+        if self._search_mode:
+            filtered = self.articles
+            real_row = (self._current_page - 1) * self._page_size + displayed_row
+        else:
+            filtered = self.articles
+            real_row = displayed_row
+
+        if real_row >= len(filtered) or not filtered:
             return
 
         if self.preview_dialog is None:
             self.preview_dialog = ArticlePreviewDialog(self.window())
             self.preview_dialog.article_changed.connect(self._on_preview_article_changed)
 
-        self.preview_dialog.set_articles(filtered, row)
+        self.preview_dialog.set_articles(filtered, real_row)
         self.preview_dialog.exec()
 
     def _warmup_preview_dialog(self):
@@ -329,63 +444,49 @@ class ArticlesPage(ScrollArea):
             self.preview_dialog.article_changed.connect(self._on_preview_article_changed)
 
     def _on_preview_article_changed(self, index):
-        if 0 <= index < self.data_table.rowCount():
-            self.data_table.selectRow(index)
-
-    def _get_filtered_with_matches(self):
-        search_text = self.search_input.text().strip().lower()
-        account_filter = self.account_filter.currentText()
-
-        filtered = self.articles
-        if account_filter != "全部":
-            filtered = [a for a in filtered if a.get('公众号', '') == account_filter]
-
-        match_texts = [None] * len(filtered)
-        if search_text:
-            matched_articles = []
-            matched_texts = []
-            for article in filtered:
-                title = article.get('标题', '') or ''
-                content = article.get('内容', '') or ''
-                title_match = search_text in title.lower()
-                content_lower = content.lower()
-                pos = content_lower.find(search_text)
-                if title_match or pos >= 0:
-                    matched_articles.append(article)
-                    if pos >= 0:
-                        matched_texts.append(_get_match_context(content, pos, pos + len(search_text)))
-                    else:
-                        matched_texts.append('')
-            return matched_articles, matched_texts
-        return filtered, match_texts
+        if self._search_mode:
+            if 0 <= index < len(self.articles):
+                page_of_index = index // self._page_size + 1
+                if page_of_index != self._current_page:
+                    self._current_page = page_of_index
+                    self._render_page()
+                displayed_row = index % self._page_size
+                if displayed_row < self.data_table.rowCount():
+                    self.data_table.selectRow(displayed_row)
+        else:
+            if 0 <= index < len(self.articles):
+                self.data_table.selectRow(index)
 
     def _get_filtered_articles(self):
-        articles, _ = self._get_filtered_with_matches()
-        return articles
+        return self.articles
 
     def _on_context_menu(self, pos):
         item = self.data_table.itemAt(pos)
         if item is None:
             return
 
-        row = item.row()
-        if row < 0:
+        displayed_row = item.row()
+        if displayed_row < 0:
             return
 
-        filtered = self._get_filtered_articles()
-        if row >= len(filtered):
+        if self._search_mode:
+            real_row = (self._current_page - 1) * self._page_size + displayed_row
+        else:
+            real_row = displayed_row
+
+        if real_row >= len(self.articles):
             return
 
-        article = filtered[row]
+        article = self.articles[real_row]
         link = article.get('链接', '')
 
-        match_item = self.data_table.item(row, 2)
+        match_item = self.data_table.item(displayed_row, 2)
         match_text = match_item.text() if match_item else ''
 
         menu = QMenu(self)
 
         preview_action = QAction("查看文章", self)
-        preview_action.triggered.connect(lambda: self._preview_article_at_row(row))
+        preview_action.triggered.connect(lambda r=real_row: self._preview_article_at_row(r))
         menu.addAction(preview_action)
 
         open_action = QAction("查看原文", self)
@@ -407,7 +508,7 @@ class ArticlesPage(ScrollArea):
         menu.addSeparator()
 
         delete_action = QAction("删除", self)
-        delete_action.triggered.connect(lambda: self._on_delete_article(row, link))
+        delete_action.triggered.connect(lambda d=displayed_row, l=link: self._on_delete_article(d, l))
         menu.addAction(delete_action)
 
         menu.exec(self.data_table.viewport().mapToGlobal(pos))
@@ -433,8 +534,18 @@ class ArticlesPage(ScrollArea):
         else:
             InfoBar.error(title="删除失败", content="未找到该文章", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
-    def _preview_article_at_row(self, row):
-        self.data_table.selectRow(row)
+    def _preview_article_at_row(self, real_row):
+        if self._search_mode:
+            page = real_row // self._page_size + 1
+            if page != self._current_page:
+                self._current_page = page
+                self._render_page()
+            displayed = real_row % self._page_size
+        else:
+            displayed = real_row
+            if displayed >= len(self.articles):
+                return
+        self.data_table.selectRow(displayed)
         self._on_fullscreen_preview()
 
     def _on_export_pdf(self, link):
@@ -453,6 +564,7 @@ class ArticlesPage(ScrollArea):
         QDesktopServices.openUrl(QUrl.fromLocalFile(results_dir))
 
     def load_articles_data(self, articles, source_info="爬取结果"):
+        self._search_mode = False
         self.articles = []
         accounts = set()
         for article in articles:
@@ -461,21 +573,26 @@ class ArticlesPage(ScrollArea):
                 '标题': article.get('title', ''),
                 '发布时间': article.get('publish_time', ''),
                 '链接': article.get('link', ''),
-                '内容': article.get('content', '')
+                '内容': article.get('content', '') or ''
             }
             self.articles.append(row)
             if row['公众号']:
                 accounts.add(row['公众号'])
 
         self.source_info = source_info
+        self._total_count = len(self.articles)
+        self._current_page = 1
+        self._total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
 
+        self.account_filter.blockSignals(True)
         self.account_filter.clear()
         self.account_filter.addItem("全部")
         for account in sorted(accounts):
             self.account_filter.addItem(account)
+        self.account_filter.blockSignals(False)
 
-        self._apply_filters()
+        self._render_page()
 
-        InfoBar.success(title="数据已加载", content=f"共 {len(self.articles)} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
+        InfoBar.success(title="数据已加载", content=f"共 {self._total_count} 条记录", parent=self, position=InfoBarPosition.TOP, duration=3000)
 
 

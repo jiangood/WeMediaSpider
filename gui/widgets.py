@@ -280,7 +280,7 @@ class ProgressWidget(QWidget):
         from PyQt6.QtCore import QTimer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._pulse_animation)
-        self._timer.setInterval(50)  # 50ms for smooth animation
+        self._timer.setInterval(100)  # 100ms — reduces CPU waste vs 50ms while still smooth
     
     def _pulse_animation(self):
         """执行脉冲动画，在 20-80 之间来回变化"""
