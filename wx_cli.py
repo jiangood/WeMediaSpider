@@ -4,12 +4,12 @@
 微信公众号爬虫 CLI - 单文件独立版
 =================================
 用法:
-    python run_cli.py 公众号名称 [天数] [-o 输出目录]
+     python wx_cli.py 公众号名称 [天数] [-o 输出目录]
 
 示例:
-    python run_cli.py 人民日报
-    python run_cli.py 人民日报 7
-    python run_cli.py "腾讯科技" 30 -o ./data
+     python wx_cli.py 人民日报
+     python wx_cli.py 人民日报 7
+     python wx_cli.py "腾讯科技" 30 -o ./data
 """
 
 import argparse
@@ -17,13 +17,10 @@ import hashlib
 
 import json
 import os
-import platform
 import random
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime, timedelta
 
@@ -32,11 +29,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 from fpdf import FPDF
 from markdownify import MarkdownConverter
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 
 __version__ = "1.0.0"
 
@@ -107,8 +100,6 @@ class WeChatLogin:
     def __init__(self):
         self.token = None
         self.cookies = None
-        self.driver = None
-        self.temp_user_data_dir = None
 
     def _get_cache_data(self):
         if not os.path.exists(CACHE_FILE):
@@ -186,24 +177,6 @@ class WeChatLogin:
             log_warn(f"验证缓存异常: {e}")
             return False
 
-    def _cleanup_chrome_processes(self):
-        try:
-            if platform.system() == "Windows":
-                subprocess.run(["taskkill", "/F", "/IM", "chrome.exe", "/T"],
-                               stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-            else:
-                subprocess.run(["pkill", "-f", "chrome"],
-                               stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-    def _cleanup_temp_files(self):
-        if self.temp_user_data_dir and os.path.exists(self.temp_user_data_dir):
-            try:
-                shutil.rmtree(self.temp_user_data_dir, ignore_errors=True)
-            except Exception:
-                pass
-
     def login(self):
         log_info("开始登录微信公众号平台 ...")
 
@@ -212,36 +185,19 @@ class WeChatLogin:
             return True
 
         self._clear_cache()
-        self._cleanup_chrome_processes()
 
         try:
-            log_info("正在启动 Chrome 浏览器 ...")
-            options = webdriver.ChromeOptions()
-            self.temp_user_data_dir = tempfile.mkdtemp()
-            options.add_argument(f"--user-data-dir={self.temp_user_data_dir}")
-            options.add_argument("--disable-extensions")
-            options.add_argument("--disable-plugins")
-            options.add_argument("--disable-software-rasterizer")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-blink-features=AutomationControlled")
-            options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36")
-
-            os.environ.setdefault(
-                "WDM_CHROME_DRIVER_MIRROR_URL",
-                "https://registry.npmmirror.com/-/binary/chromedriver"
+            log_info("正在启动浏览器 ...")
+            playwright = sync_playwright().start()
+            browser = playwright.chromium.launch(headless=False)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
-            service = ChromeService(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=options)
-            log_ok("Chrome 浏览器启动成功")
-
-            self.driver.execute_script(
-                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            )
+            page = context.new_page()
+            log_ok("浏览器启动成功")
 
             log_info("正在访问微信公众平台 https://mp.weixin.qq.com/ ...")
-            self.driver.get('https://mp.weixin.qq.com/')
+            page.goto('https://mp.weixin.qq.com/')
             log_ok("页面加载完成")
 
             print()
@@ -251,10 +207,9 @@ class WeChatLogin:
             print(" " + "=" * 50)
             print()
 
-            wait = WebDriverWait(self.driver, 300)
-            wait.until(EC.url_contains('token'))
+            page.wait_for_url(lambda url: 'token' in url, timeout=300000)
 
-            current_url = self.driver.current_url
+            current_url = page.url
             log_ok("检测到登录成功！正在获取认证信息 ...")
 
             token_match = re.search(r'token=(\d+)', current_url)
@@ -263,7 +218,7 @@ class WeChatLogin:
                 return False
             self.token = token_match.group(1)
 
-            raw_cookies = self.driver.get_cookies()
+            raw_cookies = context.cookies()
             self.cookies = {item['name']: item['value'] for item in raw_cookies}
             log_ok(f"Token 和 Cookies 获取成功（共 {len(self.cookies)} 个 cookie）")
 
@@ -276,13 +231,18 @@ class WeChatLogin:
             return False
 
         finally:
-            if self.driver:
-                try:
-                    self.driver.quit()
-                except Exception:
-                    pass
-            self._cleanup_chrome_processes()
-            self._cleanup_temp_files()
+            try:
+                context.close()
+            except Exception:
+                pass
+            try:
+                browser.close()
+            except Exception:
+                pass
+            try:
+                playwright.stop()
+            except Exception:
+                pass
 
     def get_token(self):
         if not self.token:
@@ -779,17 +739,17 @@ def main():
         description='微信公众号文章爬虫 - 下载文章并导出为 PDF',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""示例:
-  python run_cli.py 人民日报
-  python run_cli.py 人民日报 7
-  python run_cli.py "腾讯科技" 30 -o ./data
-  python run_cli.py 人民日报 --no-cache
+  python wx_cli.py 人民日报
+  python wx_cli.py 人民日报 7
+  python wx_cli.py "腾讯科技" 30 -o ./data
+  python wx_cli.py 人民日报 --no-cache
         """
     )
     parser.add_argument('account', help='微信公众号名称')
-    parser.add_argument('days', nargs='?', type=int, default=30,
-                        help='爬取最近 N 天的文章（默认 30 天）')
-    parser.add_argument('-o', '--output', default=os.getcwd(),
-                        help='输出目录（默认当前目录）')
+    parser.add_argument('days', nargs='?', type=int, default=7,
+                        help='爬取最近 N 天的文章（默认 7 天）')
+    parser.add_argument('-o', '--output', default=os.path.join(os.getcwd(), 'download'),
+                        help='输出目录（默认 ./download）')
     parser.add_argument('--no-cache', action='store_true',
                         help='忽略缓存，强制重新扫码登录')
     args = parser.parse_args()
@@ -807,7 +767,7 @@ def main():
     print()
 
     # ---- Step 1: 登录 ----
-    log_step(1, 5, "登录微信公众平台")
+    log_step(1, 4, "登录微信公众平台")
     login = WeChatLogin()
     if args.no_cache:
         login._clear_cache()
@@ -826,7 +786,7 @@ def main():
     print()
 
     # ---- Step 2: 搜索公众号 ----
-    log_step(2, 5, "搜索公众号")
+    log_step(2, 4, "搜索公众号")
     log_info(f"正在搜索: {args.account}")
     results = search_account(headers, token, args.account)
 
@@ -841,7 +801,7 @@ def main():
     print()
 
     # ---- Step 3: 获取文章列表 ----
-    log_step(3, 5, "获取文章列表")
+    log_step(3, 4, "获取文章列表")
 
     cutoff_date = datetime.now() - timedelta(days=args.days)
     cutoff_ts = int(cutoff_date.timestamp())
@@ -892,59 +852,50 @@ def main():
     log_ok(f"共获取到 {len(all_articles)} 篇文章（最近 {args.days} 天内）")
     print()
 
-    # ---- Step 4: 获取正文内容 ----
-    log_step(4, 5, "获取文章正文内容")
-    success_count = 0
-    fail_count = 0
-    for i, article in enumerate(all_articles):
-        log_substep(f"[{i + 1}/{len(all_articles)}] {article['title'][:50]}")
-        try:
-            content = get_article_content(article['link'], headers)
-            article['content'] = content
-            log_ok(f"  内容获取成功（{len(content)} 字符）")
-            success_count += 1
-        except Exception as e:
-            log_warn(f"  内容获取失败: {e}")
-            article['content'] = f"获取内容失败: {e}"
-            fail_count += 1
-
-        # Delay between articles
-        if i < len(all_articles) - 1:
-            delay = random.uniform(2.0, 4.0)
-            log_substep(f"等待 {delay:.1f} 秒后继续 ...")
-            time.sleep(delay)
-
-    log_ok(f"内容获取完成: 成功 {success_count} 篇，失败 {fail_count} 篇")
-    print()
-
-    # ---- Step 5: 导出 PDF ----
-    log_step(5, 5, "导出 PDF 文件")
+    # ---- Step 4: 下载文章并导出 PDF ----
+    log_step(4, 4, "下载文章并导出 PDF")
     output_dir = os.path.abspath(args.output)
     pdf_count = 0
-    pdf_fail = 0
+    skip_count = 0
+    fail_count = 0
 
+    total = len(all_articles)
+    safe_account = re.sub(r'[\\/:*?"<>|]', '', account_name).strip()[:50] or 'unknown'
     for i, article in enumerate(all_articles):
-        if not article.get('content') or article['content'].startswith('获取失败'):
-            log_warn(f"[{i + 1}/{len(all_articles)}] 跳过（无有效内容）: {article['title'][:50]}")
-            pdf_fail += 1
-            continue
-
         title = article['title']
         date_str = datetime.fromtimestamp(article['publish_timestamp']).strftime('%Y-%m-%d')
-        log_substep(f"[{i + 1}/{len(all_articles)}] 正在导出: {title[:50]}")
+        safe_title = re.sub(r'[\\/:*?"<>|]', '', title).strip()[:100] or 'untitled'
+        pdf_path = os.path.join(output_dir, safe_account, f"{date_str}_{safe_title}.pdf")
+
+        if os.path.exists(pdf_path):
+            log_substep(f"[{i + 1}/{total}] {title[:50]}（已存在，跳过）")
+            skip_count += 1
+            continue
+
+        article_start = time.time()
+        log_substep(f"[{i + 1}/{total}] {title[:50]}")
 
         try:
+            content = get_article_content(article['link'], headers)
+            log_ok(f"  内容获取成功（{len(content)} 字符），正在导出 PDF ...")
             generate_article_pdf(
                 article_title=title,
                 account_name=account_name,
                 publish_date_str=date_str,
-                markdown_content=article['content'],
+                markdown_content=content,
                 output_dir=output_dir,
             )
+            article_elapsed = time.time() - article_start
+            log_ok(f"  PDF 已保存: {date_str}_{title[:30]}.pdf（本次耗时 {article_elapsed:.0f} 秒）")
             pdf_count += 1
         except Exception as e:
-            log_error(f"  导出失败: {e}")
-            pdf_fail += 1
+            article_elapsed = time.time() - article_start
+            log_warn(f"  处理失败: {e}（本次耗时 {article_elapsed:.0f} 秒）")
+            fail_count += 1
+
+        if i < total - 1:
+            log_substep("等待 10 秒后继续 ...")
+            time.sleep(10)
 
     # ---- Summary ----
     print()
@@ -952,10 +903,12 @@ def main():
     print("    任务完成！")
     print(" " + "=" * 54)
     print(f"   公众号:     {account_name}")
-    print(f"   抓取文章:   {len(all_articles)} 篇")
-    print(f"   导出 PDF:   {pdf_count} 篇")
-    if pdf_fail:
-        print(f"   跳过/失败:  {pdf_fail} 篇")
+    print(f"   文章:       {total} 篇")
+    print(f"   新增:       {pdf_count} 篇")
+    if skip_count:
+        print(f"   跳过:       {skip_count} 篇")
+    if fail_count:
+        print(f"   失败:       {fail_count} 篇")
     print(f"   保存路径:   {os.path.join(output_dir, account_name)}")
     elapsed = time.time() - start_time
     print(f"   用时:       {elapsed:.0f} 秒")

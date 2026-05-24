@@ -2,18 +2,29 @@
 chcp 65001 >nul
 title 微信公众号文章下载器
 
+if exist .last_name (
+    set /p name=<.last_name
+) else (
+    set name=中铁文旅
+)
+set days=7
+
 :LOOP
 cls
 echo ============================================
 echo       微信公众号文章下载器
 echo ============================================
 echo.
+echo  上次配置: %name%
+echo.
 
-set /p name=请输入公众号名称（直接回车退出）: 
-if "%name%"=="" exit /b
+set /p name=请输入公众号名称（回车保持上次）: 
+set /p days=请输入要爬取的天数（回车默认 7 天）: 
 
-set /p days=请输入要爬取的天数（直接回车默认30天）: 
-if "%days%"=="" set days=30
+if "%name%"=="" set name=中铁文旅
+if "%days%"=="" set days=7
+
+echo %name% >.last_name
 
 echo.
 echo  公众号: %name%
