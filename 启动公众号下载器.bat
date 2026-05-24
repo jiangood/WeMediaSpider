@@ -7,9 +7,9 @@ if exist .last_name (
 ) else (
     set name=中铁文旅
 )
-set days=7
 
 :LOOP
+set days=
 cls
 echo ============================================
 echo       微信公众号文章下载器
